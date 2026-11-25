@@ -1135,6 +1135,23 @@ async function runV4FinalSandboxTest() {
       // MODO 1: HTML AUTOSSUFICIENTE
       console.log(`\n[${site.name}] --- Testando Modo 1: HTML Autossuficiente ---`);
       await panelPage.click('#mode-html');
+
+      // Valida se o aviso de WebGL/3D relevante é exibido na UI
+      const noticeState = await panelPage.evaluate(() => {
+        const el = document.getElementById('webglNotice');
+        return {
+          visible: el ? window.getComputedStyle(el).display !== 'none' : false,
+          text: el ? el.textContent.trim() : ''
+        };
+      });
+      if (site.id === 'landonorris') {
+        console.log(`[Lando Norris WebGL] Aviso na UI: visivel=${noticeState.visible}, texto="${noticeState.text}"`);
+        if (!noticeState.visible || !noticeState.text.includes('Esta página usa WebGL/3D')) {
+          throw new Error(`Aviso de WebGL não exibido na UI para Lando Norris: ${JSON.stringify(noticeState)}`);
+        }
+        await panelPage.screenshot({ path: path.join(screenshotsDir, 'proof-webgl-warning-banner.png') });
+      }
+
       await panelPage.click('#btnMainAction');
 
       // Se aparecer tela de login (consentimento), clica para prosseguir

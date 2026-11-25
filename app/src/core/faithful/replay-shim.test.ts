@@ -133,5 +133,13 @@ describe('Pluck Replay Shim', () => {
       const text = await res.text();
       expect(text).toBe('');
     });
+
+    it('neutraliza chamadas fetch de prefetch RSC do Next.js retornando 200 text/x-component vazio', async () => {
+      const res = await window.fetch('/pricing/__next._tree.txt?_rsc=test1234');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toContain('text/x-component');
+      const text = await res.text();
+      expect(text).toBe('');
+    });
   });
 });

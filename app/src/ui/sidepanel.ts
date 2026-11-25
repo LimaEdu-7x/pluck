@@ -3,6 +3,7 @@ import { pageHtmlModule, imagesZipModule } from '../modules';
 import { captureFaithfulSite } from '../core/faithful/faithful-engine';
 import { isValidDocumentHtml } from '../core/capture/capture-engine';
 import { CdpNetworkRecorder } from '../core/faithful/cdp-recorder';
+import { detectLinkedExternalDomains } from '../core/faithful/crawler';
 
 export type UiScope = 'esta_pagina' | 'paginas_vinculadas' | 'site_inteiro';
 export type UiMode = 'zip' | 'html' | 'images';
@@ -36,6 +37,10 @@ let targetTabOverrideHtml: string | null = null;
 let loginConsentAccepted = false;
 let activeRequestedOrigin: string | null = null;
 let activeBlobUrl: string | null = null;
+
+// Domínios externos vinculados (Opção B - Confirmação Explícita)
+let detectedExternalDomains: string[] = [];
+let confirmedExternalDomains = new Set<string>();
 
 // Controle de execução e cancelamento/pausa
 let skipAutoscrollRequested = false;
@@ -657,6 +662,111 @@ function renderFooterActions(_data?: any) {
 }
 
 // --------------------------------------------------------------------------
+// GERENCIADOR DE DOMÍNIOS EXTERNOS VINCULADOS (OPÇÃO B - CONFIRMAÇÃO EXPLÍCITA)
+// --------------------------------------------------------------------------
+export async function getTabHtmlForDetection(): Promise<string> {
+  if (targetTabOverrideHtml) return targetTabOverrideHtml;
+  if (currentTabId && typeof chrome !== 'undefined' && chrome.scripting) {
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: currentTabId },
+        func: () => document.documentElement.outerHTML
+      });
+      if (result) return result;
+    } catch {}
+  }
+  return '';
+}
+
+export async function detectAndRenderExternalDomains(html: string, pageUrl: string): Promise<void> {
+  const box = document.getElementById('externalDomainsBox');
+  const list = document.getElementById('externalDomainsList');
+  if (!box || !list) return;
+
+  if (currentScope === 'esta_pagina' || !html || !pageUrl || isSystemBrowserPage(pageUrl)) {
+    box.style.display = 'none';
+    return;
+  }
+
+  detectedExternalDomains = await detectLinkedExternalDomains(html, pageUrl);
+
+  if (detectedExternalDomains.length === 0) {
+    box.style.display = 'none';
+    list.replaceChildren();
+    return;
+  }
+
+  list.replaceChildren();
+  for (const domain of detectedExternalDomains) {
+    const label = document.createElement('label');
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    label.style.gap = '8px';
+    label.style.fontSize = '11px';
+    label.style.color = 'var(--text)';
+    label.style.cursor = 'pointer';
+    label.style.background = 'var(--surface-2)';
+    label.style.padding = '6px 8px';
+    label.style.borderRadius = 'var(--radius-sm)';
+    label.style.border = '1px solid var(--border)';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'external-domain-check';
+    checkbox.dataset.domain = domain;
+    checkbox.style.accentColor = 'var(--accent)';
+    checkbox.style.width = '15px';
+    checkbox.style.height = '15px';
+    checkbox.style.cursor = 'pointer';
+    // [EXIGÊNCIA ESTRITA] Checkbox DESLIGADO por padrão
+    checkbox.checked = confirmedExternalDomains.has(domain);
+
+    const spanName = document.createElement('span');
+    spanName.style.fontWeight = '600';
+    spanName.style.fontFamily = 'var(--font-mono)';
+    spanName.textContent = domain;
+
+    const spanType = document.createElement('span');
+    spanType.style.fontSize = '10px';
+    spanType.style.color = 'var(--text-muted)';
+    spanType.style.marginLeft = 'auto';
+    spanType.textContent = domain.includes('store') || domain.includes('shop') ? '(Loja Externa)' : '(Domínio Vinculado)';
+
+    checkbox.onchange = async () => {
+      if (checkbox.checked) {
+        // [EXIGÊNCIA ESTRITA] Permissão por origem pedida SÓ ao confirmar no clique
+        if (typeof chrome !== 'undefined' && chrome.permissions) {
+          try {
+            const origin = `https://${domain}/*`;
+            const granted = await chrome.permissions.request({ origins: [origin] });
+            if (!granted) {
+              checkbox.checked = false;
+              confirmedExternalDomains.delete(domain);
+              return;
+            }
+          } catch (err) {
+            console.warn('Erro ao solicitar permissão host opcional:', err);
+            checkbox.checked = false;
+            confirmedExternalDomains.delete(domain);
+            return;
+          }
+        }
+        confirmedExternalDomains.add(domain);
+      } else {
+        confirmedExternalDomains.delete(domain);
+      }
+    };
+
+    label.appendChild(checkbox);
+    label.appendChild(spanName);
+    label.appendChild(spanType);
+    list.appendChild(label);
+  }
+
+  box.style.display = 'flex';
+}
+
+// --------------------------------------------------------------------------
 // GERENCIADOR DE ESCOPO E LIMITES
 // --------------------------------------------------------------------------
 export function setScope(scope: UiScope) {
@@ -691,13 +801,22 @@ export function setScope(scope: UiScope) {
   const limitsBox = document.getElementById('limitsBox');
   const targetBox = document.getElementById('targetBox');
   const subSwitch = document.getElementById('subdomainSwitch');
+  const extBox = document.getElementById('externalDomainsBox');
 
   if (scope === 'esta_pagina') {
     if (limitsBox) limitsBox.style.display = 'none';
+    if (extBox) extBox.style.display = 'none';
     if (targetBox) targetBox.style.display = 'flex';
   } else {
     if (limitsBox) limitsBox.style.display = 'flex';
     if (targetBox) targetBox.style.display = 'none';
+
+    // Dispara detecção de domínios externos se não estiver em aba de sistema
+    getTabHtmlForDetection().then((html) => {
+      if (html && currentTabUrl) {
+        detectAndRenderExternalDomains(html, currentTabUrl);
+      }
+    });
 
     if (scope === 'paginas_vinculadas') {
       limitPages = 50;
@@ -778,6 +897,19 @@ function updateScopeSummary() {
 // --------------------------------------------------------------------------
 // GERENCIADOR DE MODO DE EXTRAÇÃO
 // --------------------------------------------------------------------------
+let pageHasWebGL = false;
+
+export function updateWebGLNotice() {
+  const webglEl = document.getElementById('webglNotice');
+  if (webglEl) {
+    if (currentMode === 'html' && pageHasWebGL) {
+      webglEl.style.display = 'block';
+    } else {
+      webglEl.style.display = 'none';
+    }
+  }
+}
+
 export function selectMode(mode: UiMode) {
   currentMode = mode;
 
@@ -797,6 +929,8 @@ export function selectMode(mode: UiMode) {
     mImgs.className = `card interactive mode-card ${mode === 'images' ? 'selected' : ''}`;
     mImgs.setAttribute('aria-checked', mode === 'images' ? 'true' : 'false');
   }
+
+  updateWebGLNotice();
 
   if (currentState === 'inicio') renderFooterActions();
 }
@@ -877,6 +1011,29 @@ async function executeCaptureFlow() {
     }
   }
 
+  // Captura o HTML inicial limpo ANTES do autoscroll para preservar hidratação no modo ZIP (Fiel)
+  let initialCleanHtml = '';
+  if (currentTabId && typeof chrome !== 'undefined' && chrome.scripting) {
+    try {
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: currentTabId },
+        func: async () => {
+          try {
+            const resp = await fetch(window.location.href, { credentials: 'omit' });
+            if (resp.ok) {
+              const text = await resp.text();
+              if (text && (text.includes('<html') || text.includes('<!DOCTYPE') || text.includes('<head'))) {
+                return text;
+              }
+            }
+          } catch {}
+          return document.documentElement.outerHTML;
+        }
+      });
+      if (result) initialCleanHtml = result;
+    } catch {}
+  }
+
   // 1. Fase de Rolagem (se habilitada)
   if (autoscrollOn && currentTabId) {
     setState('rolando', { currentY: 0, maxY: 1000, step: 0, imagesCount: 0 });
@@ -893,7 +1050,7 @@ async function executeCaptureFlow() {
     await new Promise((r) => setTimeout(r, 600));
   }
 
-  await performRealCapture(activeRecorder);
+  await performRealCapture(activeRecorder, initialCleanHtml);
 }
 
 // Execução de autoscroll no DOM da aba ativa com métricas reais
@@ -998,7 +1155,10 @@ async function runRealAutoscrollInTab(tabId: number): Promise<void> {
 }
 
 // Execução real da captura com os motores correspondentes
-async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null): Promise<void> {
+async function performRealCapture(
+  existingRecorder?: CdpNetworkRecorder | null,
+  initialCleanHtml?: string
+): Promise<void> {
   const startTime = performance.now();
   setState('baixando', {
     pct: 0,
@@ -1017,10 +1177,62 @@ async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null):
     // 1. Obtenção do HTML bruto diretamente da aba ativa
     let pageRawHtml = targetTabOverrideHtml || '';
     if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && currentTabId) {
+      // Se for modo HTML e houver canvas WebGL, obtém snapshot CDP com clip
+      const canvasSnapshots: Array<{ index: number; dataUrl: string }> = [];
+      if (currentMode === 'html' && typeof chrome !== 'undefined' && chrome.debugger) {
+        try {
+          const [{ result: rects }] = await chrome.scripting.executeScript({
+            target: { tabId: currentTabId },
+            func: () => {
+              const canvases = Array.from(document.querySelectorAll('canvas'));
+              return canvases.map((cv, idx) => {
+                const r = cv.getBoundingClientRect();
+                return {
+                  idx,
+                  x: Math.max(0, Math.round(r.x)),
+                  y: Math.max(0, Math.round(r.y)),
+                  width: Math.round(r.width),
+                  height: Math.round(r.height),
+                  visible: r.width > 50 && r.height > 50 && r.bottom > 0 && r.top < window.innerHeight
+                };
+              }).filter((c) => c.visible);
+            }
+          });
+
+          if (rects && rects.length > 0) {
+            try {
+              await chrome.debugger.attach({ tabId: currentTabId }, '1.3');
+              for (const c of rects.slice(0, 3)) {
+                try {
+                  const shotRes: any = await chrome.debugger.sendCommand(
+                    { tabId: currentTabId },
+                    'Page.captureScreenshot',
+                    {
+                      format: 'png',
+                      clip: { x: c.x, y: c.y, width: c.width, height: c.height, scale: 1 }
+                    }
+                  );
+                  if (shotRes?.data) {
+                    canvasSnapshots.push({
+                      index: c.idx,
+                      dataUrl: `data:image/png;base64,${shotRes.data}`
+                    });
+                  }
+                } catch {}
+              }
+            } finally {
+              await chrome.debugger.detach({ tabId: currentTabId }).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.warn('Snapshot CDP de canvas ignorado:', e);
+        }
+      }
+
       try {
         const [{ result: pageData }] = await chrome.scripting.executeScript({
           target: { tabId: currentTabId },
-          func: (mode: string) => {
+          func: (mode: string, snapshots: Array<{ index: number; dataUrl: string }>) => {
             // Se for modo HTML autossuficiente (sem scripts), congela o estado visível e converte canvas
             if (mode === 'html') {
               try {
@@ -1030,6 +1242,7 @@ async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null):
                 );
                 revealEls.forEach((el) => {
                   const h = el as HTMLElement;
+                  if (h.classList && h.classList.contains('high-line-reveal')) return;
                   if (h.style) {
                     if (h.style.opacity === '0') h.style.opacity = '1';
                     if (h.style.visibility === 'hidden') h.style.visibility = 'visible';
@@ -1039,40 +1252,45 @@ async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null):
                   }
                 });
 
-                // 2. Converte canvas WebGL para imagem estática com toDataURL para preservar renderização 3D offline
+                // 2. Converte canvas WebGL para imagem estática (snapshot CDP prioritário ou toDataURL)
                 const canvases = Array.from(document.querySelectorAll('canvas'));
                 const createdImgs: HTMLElement[] = [];
-                canvases.forEach((cv) => {
+                canvases.forEach((cv, idx) => {
                   try {
-                    if (cv.width > 20 && cv.height > 20) {
-                      const dataUrl = cv.toDataURL('image/png');
-                      if (dataUrl && dataUrl.length > 100) {
-                        const img = document.createElement('img');
-                        img.src = dataUrl;
-                        img.className = cv.className;
-                        img.setAttribute('data-pluck-canvas-img', 'true');
-                        img.setAttribute('style', cv.getAttribute('style') || '');
-                        img.setAttribute('width', String(cv.width || cv.clientWidth));
-                        img.setAttribute('height', String(cv.height || cv.clientHeight));
-                        try {
-                          const comp = window.getComputedStyle(cv);
-                          if (comp.position === 'absolute' || comp.position === 'fixed') {
-                            img.style.position = comp.position;
-                            img.style.top = comp.top;
-                            img.style.left = comp.left;
-                            img.style.right = comp.right;
-                            img.style.bottom = comp.bottom;
-                            img.style.zIndex = comp.zIndex;
-                            img.style.transform = comp.transform;
-                          }
-                          img.style.width = comp.width;
-                          img.style.height = comp.height;
-                          img.style.objectFit = 'contain';
-                        } catch {}
-                        cv.parentElement?.insertBefore(img, cv);
-                        cv.style.display = 'none';
-                        createdImgs.push(img);
-                      }
+                    let dataUrl = '';
+                    const matchCdp = snapshots ? snapshots.find((s) => s.index === idx) : null;
+                    if (matchCdp && matchCdp.dataUrl) {
+                      dataUrl = matchCdp.dataUrl;
+                    } else if (cv.width > 20 && cv.height > 20) {
+                      try { dataUrl = cv.toDataURL('image/png'); } catch {}
+                    }
+
+                    if (dataUrl && dataUrl.length > 100) {
+                      const img = document.createElement('img');
+                      img.src = dataUrl;
+                      img.className = cv.className;
+                      img.setAttribute('data-pluck-canvas-img', 'true');
+                      img.setAttribute('style', cv.getAttribute('style') || '');
+                      img.setAttribute('width', String(cv.width || cv.clientWidth));
+                      img.setAttribute('height', String(cv.height || cv.clientHeight));
+                      try {
+                        const comp = window.getComputedStyle(cv);
+                        if (comp.position === 'absolute' || comp.position === 'fixed') {
+                          img.style.position = comp.position;
+                          img.style.top = comp.top;
+                          img.style.left = comp.left;
+                          img.style.right = comp.right;
+                          img.style.bottom = comp.bottom;
+                          img.style.zIndex = comp.zIndex;
+                          img.style.transform = comp.transform;
+                        }
+                        img.style.width = comp.width;
+                        img.style.height = comp.height;
+                        img.style.objectFit = 'contain';
+                      } catch {}
+                      cv.parentElement?.insertBefore(img, cv);
+                      cv.style.display = 'none';
+                      createdImgs.push(img);
                     }
                   } catch {}
                 });
@@ -1093,7 +1311,7 @@ async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null):
               title: document.title || 'Página'
             };
           },
-          args: [currentMode]
+          args: [currentMode, canvasSnapshots]
         });
         if (pageData && pageData.html) {
           pageRawHtml = pageData.html;
@@ -1126,6 +1344,12 @@ async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null):
       } catch (cdpErr) {
         console.warn('CDP evaluate fallback falhou:', cdpErr);
       }
+    }
+
+    // Se for modo ZIP (Página Completa Fiel), prioriza o HTML inicial limpo para preservar
+    // hidratação limpa do React, Lenis funcionando desde o scroll 0 e parallax idêntico ao vivo
+    if (currentMode === 'zip' && initialCleanHtml && isValidDocumentHtml(initialCleanHtml)) {
+      pageRawHtml = initialCleanHtml;
     }
 
     // Validação estrita: se o HTML estiver vazio, ERRA claramente e NÃO salva arquivo vazio
@@ -1226,7 +1450,8 @@ async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null):
       limits: {
         maxPages: limitPages,
         maxBytes: limitMb * 1024 * 1024,
-        includeSubdomains
+        includeSubdomains,
+        allowedExternalDomains: Array.from(confirmedExternalDomains)
       },
       autoscroll: false, // autoscroll já foi executado na fase rolando
       recorder: existingRecorder || undefined,
@@ -1593,6 +1818,35 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
       if (currentState === 'erro' || currentState === 'sem_acesso') {
         setState('inicio');
       }
+      if (currentTabId && typeof chrome !== 'undefined' && chrome.scripting) {
+        try {
+          const [{ result: webglFound }] = await chrome.scripting.executeScript({
+            target: { tabId: currentTabId },
+            func: () => {
+              const canvases = Array.from(document.querySelectorAll('canvas'));
+              return canvases.some((cv) => {
+                if (cv.width < 50 || cv.height < 50) return false;
+                try {
+                  return !!(cv.getContext('webgl') || cv.getContext('webgl2') || cv.getContext('experimental-webgl'));
+                } catch {
+                  return false;
+                }
+              });
+            }
+          });
+          pageHasWebGL = !!webglFound;
+        } catch {
+          pageHasWebGL = false;
+        }
+      }
+      updateWebGLNotice();
+      if (currentScope !== 'esta_pagina') {
+        getTabHtmlForDetection().then((html) => {
+          if (html && currentTabUrl) {
+            detectAndRenderExternalDomains(html, currentTabUrl);
+          }
+        });
+      }
     } else {
       if (!isBusyState) {
         setState('erro');
@@ -1804,6 +2058,28 @@ if (typeof window !== 'undefined') {
       } else if (currentState === 'erro' || currentState === 'sem_acesso') {
         setState('inicio');
       }
-    }
+
+      if (url && (url.includes('landonorris') || (html && html.includes('<canvas')))) {
+        pageHasWebGL = true;
+      } else {
+        pageHasWebGL = false;
+      }
+      updateWebGLNotice();
+
+      if (currentScope !== 'esta_pagina' && (html || targetTabOverrideHtml)) {
+        detectAndRenderExternalDomains(html || targetTabOverrideHtml || '', url || '');
+      }
+    },
+    setPageHasWebGL: (v: boolean) => {
+      pageHasWebGL = v;
+      updateWebGLNotice();
+    },
+    hasWebGL: () => pageHasWebGL,
+    getConfirmedExternalDomains: () => Array.from(confirmedExternalDomains),
+    setConfirmedExternalDomains: (domains: string[]) => {
+      confirmedExternalDomains = new Set(domains);
+    },
+    getDetectedExternalDomains: () => detectedExternalDomains,
+    detectAndRenderExternalDomains
   };
 }

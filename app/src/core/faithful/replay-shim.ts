@@ -35,8 +35,8 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
 
     // Se for URL de telemetria / analytics / beacons conhecidos, bloqueia imediatamente
     if (
-      /googletagmanager\\.com|google-analytics\\.com|doubleclick\\.net|hotjar\\.com|segment\\.io|clarity\\.ms/i.test(urlStr) ||
-      /\\/ga\\/g\\/c|\\/_gsid|\\/api\\/track|\\/collect|google_tags_first_party/i.test(urlStr)
+      /googletagmanager\\.com|google-analytics\\.com|doubleclick\\.net|hotjar\\.com|segment\\.io|clarity\\.ms|facebook\\.net|fbevents|klaviyo\\.com|gorgias\\.chat|9gtb\\.com|purpledotprice\\.com|monorail/i.test(urlStr) ||
+      /\\/ga\\/g\\/c|\\/_gsid|\\/api\\/track|\\/collect|google_tags_first_party|\\/wpm@|\\/web-pixels/i.test(urlStr)
     ) {
       return null;
     }
@@ -60,6 +60,15 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
 
       // 1. Procura URL exata no mapa
       if (URL_MAP[fullUrl]) return URL_MAP[fullUrl];
+
+      // Se for URL de fallback de Rive WASM não mapeada diretamente, tenta casar com rive.wasm ou rive_fallback.wasm local
+      if (fullUrl.includes('rive_fallback.wasm') || fullUrl.includes('rive.wasm')) {
+        for (const [k, v] of Object.entries(URL_MAP)) {
+          if (k.endsWith('/rive.wasm') || k.endsWith('/rive_fallback.wasm') || v.endsWith('/rive.wasm') || v.endsWith('/rive_fallback.wasm')) {
+            return v;
+          }
+        }
+      }
 
       // 2. Procura URL sem query string e sem hash
       const cleanUrl = parsed.origin + parsed.pathname;
@@ -123,8 +132,29 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
   const origFetch = window.fetch;
   window.fetch = function(input, init) {
     let rawUrl = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+    const urlStr = typeof rawUrl === 'string' ? rawUrl : String(rawUrl || '');
+
+    // Neutraliza prefetch RSC do Next.js sem gerar requisição de rede ou erro 404
+    const hasRscHeader = init && init.headers && (
+      (init.headers instanceof Headers && (init.headers.has('RSC') || init.headers.has('Next-Router-Prefetch'))) ||
+      (typeof init.headers === 'object' && ('RSC' in init.headers || 'Next-Router-Prefetch' in init.headers))
+    );
+    if (urlStr.includes('_rsc=') || urlStr.includes('__next._tree.txt') || urlStr.includes('/_next/data/') || hasRscHeader) {
+      return Promise.resolve(new Response('', {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'Content-Type': 'text/x-component; charset=utf-8' }
+      }));
+    }
+
     const resolved = resolveUrl(rawUrl);
     if (resolved === null) {
+      if (urlStr.endsWith('.wasm') || urlStr.includes('.wasm?') || urlStr.includes('.wasm#')) {
+        return Promise.resolve(new Response('WASM not captured', { status: 404, statusText: 'Not Found' }));
+      }
+      if (urlStr.endsWith('.json') || urlStr.includes('.json?') || urlStr.includes('.json#')) {
+        return Promise.resolve(new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      }
       return Promise.resolve(new Response(new Blob([]), { status: 200, statusText: 'Blocked by Pluck' }));
     }
     if (resolved && resolved !== rawUrl) {
@@ -141,6 +171,11 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    const urlStr = typeof url === 'string' ? url : String(url || '');
+    if (urlStr.includes('_rsc=') || urlStr.includes('__next._tree.txt') || urlStr.includes('/_next/data/')) {
+      this.__pluckBlocked = true;
+      return origOpen.call(this, method, 'data:text/x-component;charset=utf-8,', ...rest);
+    }
     const resolved = resolveUrl(url);
     if (resolved === null) {
       this.__pluckBlocked = true;
@@ -334,7 +369,8 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
   if (OrigWorker) {
     window.Worker = function(scriptUrl, options) {
       const resolved = resolveUrl(scriptUrl);
-      return new OrigWorker(resolved === null ? BLOCKED_SCRIPT_DATA : (resolved || scriptUrl), options);
+      const blobUrl = URL.createObjectURL(new Blob(['/*blocked*/'], { type: 'application/javascript' }));
+      return new OrigWorker(resolved === null ? blobUrl : (resolved || scriptUrl), options);
     };
     window.Worker.prototype = OrigWorker.prototype;
   }
@@ -384,6 +420,56 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
         if (btn) btn.style.display = 'none';
       }
     }, 1000);
+
+    // Deduplica barras de reveal adjacentes caso persistam do DOM inicial
+    const reveals = document.querySelectorAll('.high-line-reveal');
+    for (let i = 0; i < reveals.length; i++) {
+      const r = reveals[i];
+      if (r.nextElementSibling && r.nextElementSibling.classList.contains('high-line-reveal')) {
+        r.nextElementSibling.remove();
+      }
+    }
   });
+
+  // 11b. Proteção de reveal no menu (.nav-ham): colapsa barras travadas e revela texto ao abrir
+  document.addEventListener('click', function(e) {
+    const ham = e.target && e.target.closest ? e.target.closest('.nav-ham, [data-nav-ham]') : null;
+    if (ham) {
+      setTimeout(function() {
+        const menuReveals = document.querySelectorAll('.nav-menu-w .high-line-reveal');
+        for (let i = 0; i < menuReveals.length; i++) {
+          const r = menuReveals[i];
+          if (r.style.transform === 'scaleX(1)' || r.style.transform === 'matrix(1, 0, 0, 1, 0, 0)') {
+            r.style.transform = 'scaleX(0)';
+          }
+        }
+        const menuHighlights = document.querySelectorAll('.nav-menu-w [data-nav-link-highlight]');
+        for (let i = 0; i < menuHighlights.length; i++) {
+          const h = menuHighlights[i];
+          if (h.style.clipPath && h.style.clipPath.indexOf('100%') > -1) {
+            h.style.clipPath = 'inset(0 0% 0 0)';
+          }
+        }
+      }, 1200);
+    }
+  }, true);
+
+  // 12. Intercepta links não capturados para fallback offline amigável (NUNCA tela em branco)
+  document.addEventListener('click', function(e) {
+    const a = e.target && e.target.closest ? e.target.closest('a') : null;
+    if (!a) return;
+    if (a.getAttribute('data-pluck-uncaptured') === 'true') {
+      e.preventDefault();
+      window.location.href = 'offline-fallback.html';
+      return;
+    }
+  }, true);
+
+  // 13. Garante que animações WebGL / Three.js nunca fiquem congeladas se o evento allriveloaded atrasar ou falhar
+  setTimeout(function() {
+    try {
+      window.dispatchEvent(new Event('allriveloaded'));
+    } catch {}
+  }, 1800);
 })();`;
 }

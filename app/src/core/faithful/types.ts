@@ -15,6 +15,7 @@ export interface CrawlLimits {
   maxBytes: number;
   includeSubdomains: boolean;
   maxDepth?: number;
+  allowedExternalDomains?: string[];
 }
 
 export interface FaithfulCaptureOptions {

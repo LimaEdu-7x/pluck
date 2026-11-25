@@ -34,10 +34,14 @@ export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
     let cleanPath = url.pathname.replace(/^\/+/, '');
     if (!cleanPath) cleanPath = 'index.html';
 
-    // Se o pathname não tem extensão e é uma página interna, adiciona .html
+    // Se o pathname não tem extensão e é uma página/rota, adiciona .html ou index.html
     const hasExtension = /\.[a-zA-Z0-9]{1,8}$/.test(cleanPath);
-    if (!hasExtension && isSameOrigin) {
-      cleanPath += cleanPath.endsWith('/') ? 'index.html' : '.html';
+    if (!hasExtension) {
+      if (url.hostname.includes('typekit') || url.pathname.includes('/af/') || url.searchParams.has('fvd')) {
+        cleanPath += '.woff2';
+      } else {
+        cleanPath += cleanPath.endsWith('/') ? 'index.html' : '.html';
+      }
     }
 
     // Trata query string adicionando hash leve para evitar colisões
@@ -51,8 +55,12 @@ export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
       }
     }
 
-    // Sanitiza cada segmento do caminho para ser seguro em Windows/Linux/Mac
-    const segments = cleanPath.split('/').map((s) => safePath(s));
+    // Sanitiza cada segmento do caminho para ser seguro em Windows/Linux/Mac,
+    // preservando pastas essenciais de frameworks como _next para manter compatibilidade com runtimes
+    const segments = cleanPath.split('/').map((s) => {
+      if (s === '_next' || s.startsWith('_next')) return s;
+      return safePath(s);
+    });
     const sanitizedRelative = segments.join('/');
 
     if (isSameOrigin) {
@@ -100,6 +108,29 @@ export function getRelativePath(fromZipPath: string, toZipPath: string): string 
   return (upStr + remaining) || './';
 }
 
+// Remove artefatos de reveal e fecha drawers/overlays de menu capturados abertos,
+// permitindo que os scripts reinicializem de forma limpa sem cobrir o hero
+export function dropDynamicRevealArtifacts(doc: Document): void {
+  const staleReveals = doc.querySelectorAll(
+    '.high-line-reveal, .item-reveal, .img-highlight-reveal, .rich-text-line-reveal, .cal-target-reveal'
+  );
+  for (let i = 0; i < staleReveals.length; i++) {
+    staleReveals[i].remove();
+  }
+
+  // Garante que menus de navegação capturados em estado aberto comecem fechados (evita tela preta sobre o hero)
+  const openMenus = doc.querySelectorAll('.nav-menu-w, [data-nav-m]');
+  for (let i = 0; i < openMenus.length; i++) {
+    const el = openMenus[i] as HTMLElement;
+    if (el && el.style) {
+      el.style.display = 'none';
+      if (el.style.clipPath && el.style.clipPath.includes('100%')) {
+        el.style.clipPath = 'ellipse(120% 0% at 50% 0%)';
+      }
+    }
+  }
+}
+
 // Remove restrições de CDN (SRI e CORS) que impedem execução local
 export function dropCdnGuards(doc: Document): void {
   const elements = doc.querySelectorAll('[integrity], [crossorigin]');
@@ -126,17 +157,21 @@ export function normalizeImages(
       img.setAttribute('loading', 'eager');
     }
 
-    // Corrige src de imagens externas não mapeadas para não estourar CSP
+    // Corrige src de imagens (absolutas, protocol-relative ou root-relative)
     const src = img.getAttribute('src');
-    if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//'))) {
+    if (src && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('#')) {
       let resolvedUrl = src;
       try {
         resolvedUrl = pageUrl ? new URL(src, pageUrl).href : src;
       } catch {}
-      const targetZip = urlToZipMap.get(resolvedUrl) || urlToZipMap.get(src);
+      const cleanUrl = resolvedUrl.split('?')[0];
+      const targetZip =
+        urlToZipMap.get(resolvedUrl) ||
+        urlToZipMap.get(src) ||
+        urlToZipMap.get(cleanUrl);
       if (targetZip) {
         img.setAttribute('src', getRelativePath(currentZipPath, targetZip));
-      } else {
+      } else if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
         img.setAttribute('src', BLOCKED_IMAGE_DATA);
       }
     }
@@ -156,13 +191,34 @@ export function normalizeImages(
 
         // Tenta resolver no mapa
         let resolved = false;
-        for (const [rawUrl, targetZip] of urlToZipMap.entries()) {
-          if (rawUrl.includes(urlCandidate) || urlCandidate.includes(rawUrl)) {
-            const rel = getRelativePath(currentZipPath, targetZip);
-            rewrittenParts.push(`${rel}${descriptor}`);
-            if (!firstLocalRel) firstLocalRel = rel;
-            resolved = true;
-            break;
+        let candFull = urlCandidate;
+        try { if (pageUrl) candFull = new URL(urlCandidate, pageUrl).href; } catch {}
+        const cleanCand = candFull.split('?')[0];
+
+        const targetZip =
+          urlToZipMap.get(candFull) ||
+          urlToZipMap.get(urlCandidate) ||
+          urlToZipMap.get(cleanCand);
+
+        if (targetZip) {
+          const rel = getRelativePath(currentZipPath, targetZip);
+          rewrittenParts.push(`${rel}${descriptor}`);
+          if (!firstLocalRel) firstLocalRel = rel;
+          resolved = true;
+        } else {
+          for (const [rawUrl, tz] of urlToZipMap.entries()) {
+            if (
+              rawUrl === candFull ||
+              rawUrl === urlCandidate ||
+              rawUrl.includes(urlCandidate) ||
+              urlCandidate.includes(rawUrl)
+            ) {
+              const rel = getRelativePath(currentZipPath, tz);
+              rewrittenParts.push(`${rel}${descriptor}`);
+              if (!firstLocalRel) firstLocalRel = rel;
+              resolved = true;
+              break;
+            }
           }
         }
         if (!resolved && !urlCandidate.startsWith('http://') && !urlCandidate.startsWith('https://') && !urlCandidate.startsWith('//')) {
@@ -176,6 +232,71 @@ export function normalizeImages(
         img.setAttribute('srcset', `${firstLocalRel} 1x`);
       } else {
         img.removeAttribute('srcset');
+      }
+    }
+  }
+
+  // Normaliza tags <source> em <picture>
+  const sources = doc.querySelectorAll('source');
+  for (let i = 0; i < sources.length; i++) {
+    const srcEl = sources[i];
+    const src = srcEl.getAttribute('src');
+    if (src && !src.startsWith('data:') && !src.startsWith('blob:') && !src.startsWith('#')) {
+      let resolvedUrl = src;
+      try { resolvedUrl = pageUrl ? new URL(src, pageUrl).href : src; } catch {}
+      const cleanUrl = resolvedUrl.split('?')[0];
+      const targetZip =
+        urlToZipMap.get(resolvedUrl) ||
+        urlToZipMap.get(src) ||
+        urlToZipMap.get(cleanUrl);
+      if (targetZip) {
+        srcEl.setAttribute('src', getRelativePath(currentZipPath, targetZip));
+      }
+    }
+    const srcset = srcEl.getAttribute('srcset');
+    if (srcset) {
+      const parts = srcset.split(',');
+      const rewrittenParts: string[] = [];
+      for (const part of parts) {
+        const trimmed = part.trim();
+        const spaceIdx = trimmed.indexOf(' ');
+        const urlCandidate = spaceIdx > -1 ? trimmed.slice(0, spaceIdx) : trimmed;
+        const descriptor = spaceIdx > -1 ? trimmed.slice(spaceIdx) : '';
+        let resolved = false;
+        let candFull = urlCandidate;
+        try { if (pageUrl) candFull = new URL(urlCandidate, pageUrl).href; } catch {}
+        const cleanCand = candFull.split('?')[0];
+
+        const targetZip =
+          urlToZipMap.get(candFull) ||
+          urlToZipMap.get(urlCandidate) ||
+          urlToZipMap.get(cleanCand);
+
+        if (targetZip) {
+          const rel = getRelativePath(currentZipPath, targetZip);
+          rewrittenParts.push(`${rel}${descriptor}`);
+          resolved = true;
+        } else {
+          for (const [rawUrl, tz] of urlToZipMap.entries()) {
+            if (
+              rawUrl === candFull ||
+              rawUrl === urlCandidate ||
+              rawUrl.includes(urlCandidate) ||
+              urlCandidate.includes(rawUrl)
+            ) {
+              const rel = getRelativePath(currentZipPath, tz);
+              rewrittenParts.push(`${rel}${descriptor}`);
+              resolved = true;
+              break;
+            }
+          }
+        }
+        if (!resolved && !urlCandidate.startsWith('http://') && !urlCandidate.startsWith('https://') && !urlCandidate.startsWith('//')) {
+          rewrittenParts.push(part);
+        }
+      }
+      if (rewrittenParts.length > 0) {
+        srcEl.setAttribute('srcset', rewrittenParts.join(', '));
       }
     }
   }
@@ -276,12 +397,22 @@ export function rewriteHtmlDocument(
   html: string,
   pageUrl: string,
   currentZipPath: string,
-  urlToZipMap: Map<string, string>
+  urlToZipMap: Map<string, string>,
+  isSinglePageScope = false
 ): string {
+  // Protege contra bug do parser do happy-dom onde tags <style> aninhadas em <svg> fecham prematuramente o body
+  const svgStyleStore: string[] = [];
+  const sanitizedHtml = html.replace(/(<svg\b[^>]*>[\s\S]*?)<style\b[^>]*>([\s\S]*?)<\/style>([\s\S]*?<\/svg>)/gi, (_m, before, css, after) => {
+    const placeholder = `__pluck_svg_style_${svgStyleStore.length}__`;
+    svgStyleStore.push(css);
+    return `${before}<!--${placeholder}-->${after}`;
+  });
+
   const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
+  const doc = parser.parseFromString(sanitizedHtml, 'text/html');
 
   dropCdnGuards(doc);
+  dropDynamicRevealArtifacts(doc);
   normalizeImages(doc, currentZipPath, urlToZipMap, pageUrl);
   sanitizeSensitiveFields(doc);
   injectFaithfulCsp(doc);
@@ -301,9 +432,14 @@ export function rewriteHtmlDocument(
     if (!href) continue;
     try {
       const resolvedUrl = new URL(href, pageUrl).href;
-      const targetZip = urlToZipMap.get(resolvedUrl) || urlToZipMap.get(href);
+      const cleanUrl = resolvedUrl.split('?')[0];
+      const targetZip =
+        urlToZipMap.get(resolvedUrl) ||
+        urlToZipMap.get(href) ||
+        urlToZipMap.get(cleanUrl);
       if (targetZip) {
-        el.setAttribute('href', getRelativePath(currentZipPath, targetZip));
+        const rel = targetZip.startsWith('_next/') ? '/' + targetZip : getRelativePath(currentZipPath, targetZip);
+        el.setAttribute('href', rel);
       } else if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//')) {
         const rel = (el.getAttribute('rel') || '').toLowerCase();
         if (rel.includes('icon')) {
@@ -323,6 +459,32 @@ export function rewriteHtmlDocument(
       src.includes('googletagmanager.com') ||
       src.includes('google-analytics.com') ||
       src.includes('google_tags_first_party') ||
+      src.includes('klaviyo') ||
+      src.includes('gorgias') ||
+      src.includes('9gtb') ||
+      src.includes('purpledot') ||
+      src.includes('perf-kit') ||
+      src.includes('preloads') ||
+      src.includes('shop-js') ||
+      src.includes('cart-sync') ||
+      src.includes('load_feature') ||
+      src.includes('origin_trials') ||
+      src.includes('shopify_pay') ||
+      src.includes('privacy-banner') ||
+      src.includes('hotjar') ||
+      src.includes('fbevents') ||
+      src.includes('facebook') ||
+      src.includes('doubleclick') ||
+      src.includes('clarity.ms') ||
+      src.includes('segment.io') ||
+      src.includes('shop.app/checkouts') ||
+      src.includes('shopifycloud/checkout-web') ||
+      src.includes('shopifycloud/perf-kit') ||
+      src.includes('shopifycloud/shop-js') ||
+      src.includes('shopifycloud/privacy-banner') ||
+      src.includes('shopifycloud/storefront/assets/storefront/load_feature') ||
+      src.includes('shopifycloud/storefront/assets/shopify_pay') ||
+      src.includes('shopifycloud/storefront/assets/storefront/origin_trials') ||
       src.includes('avljl2rk9q5p') ||
       src.includes('/ga/g/c')
     ) {
@@ -331,9 +493,29 @@ export function rewriteHtmlDocument(
     }
     try {
       const resolvedUrl = new URL(src, pageUrl).href;
-      const targetZip = urlToZipMap.get(resolvedUrl) || urlToZipMap.get(src);
+      const cleanUrl = resolvedUrl.split('?')[0];
+      const cleanSrc = src.split('?')[0];
+      let targetZip =
+        urlToZipMap.get(resolvedUrl) ||
+        urlToZipMap.get(src) ||
+        urlToZipMap.get(cleanUrl) ||
+        urlToZipMap.get(cleanSrc);
+
+      if (!targetZip) {
+        const filename = cleanUrl.split('/').pop();
+        if (filename && filename.includes('.')) {
+          for (const [k, v] of urlToZipMap.entries()) {
+            if (k.endsWith('/' + filename) || k.split('?')[0].endsWith('/' + filename)) {
+              targetZip = v;
+              break;
+            }
+          }
+        }
+      }
+
       if (targetZip) {
-        el.setAttribute('src', getRelativePath(currentZipPath, targetZip));
+        const rel = targetZip.startsWith('_next/') ? '/' + targetZip : getRelativePath(currentZipPath, targetZip);
+        el.setAttribute('src', rel);
       } else if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
         el.setAttribute('type', 'application/blocked');
         el.removeAttribute('src');
@@ -347,9 +529,58 @@ export function rewriteHtmlDocument(
     const s = allScripts[i];
     if (s.id === '__pluck_replay_shim__' || s.textContent?.includes('URL_MAP')) continue;
     const text = s.textContent || '';
-    if (text.includes('google_tags_first_party') || text.includes("gtag('config'") || text.includes('gtag("config"')) {
+    if (
+      text.includes('google_tags_first_party') ||
+      text.includes("gtag('config'") ||
+      text.includes('gtag("config"') ||
+      text.includes('gtag(') ||
+      text.includes('wpmLoader') ||
+      text.includes('__TREKKIE_SHIM_QUEUE') ||
+      text.includes('ShopifyAnalytics') ||
+      text.includes('klaviyo') ||
+      text.includes('PurpleDotConfig') ||
+      text.includes('h.hj = h.hj') ||
+      text.includes('h, o, t, j, a, r') ||
+      text.includes('loader.init-shop-cart-sync') ||
+      text.includes('Shopify.SignInWithShop') ||
+      text.includes('ShopifyPay') ||
+      text.includes('portableWalletsFindBuyerConsent') ||
+      text.includes('Shopify.PaymentButton') ||
+      text.includes('webmcp') ||
+      text.includes('customDocumentWrite') ||
+      text.includes('initGorgiasChatPromise')
+    ) {
       s.remove();
     }
+  }
+
+  // Fallback de visibilidade para seletores de moeda usando Choices.js (ex: loja Shopify)
+  const currencySelects = doc.querySelectorAll('.currency-selector select[data-choices]');
+  if (currencySelects.length > 0 && doc.head) {
+    const currencyStyle = doc.createElement('style');
+    currencyStyle.textContent = `
+      .currency-selector select[data-choices] {
+        opacity: 1 !important;
+        display: inline-block !important;
+        appearance: none;
+        -webkit-appearance: none;
+        background: transparent !important;
+        background-color: transparent !important;
+        color: var(--header-color-font, #d2ff00) !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 800;
+        cursor: pointer;
+        padding-right: 14px;
+      }
+      .currency-selector .choices {
+        display: flex !important;
+      }
+    `;
+    doc.head.appendChild(currencyStyle);
   }
 
   // Reescreve URLs dentro de tags <style> inline
@@ -358,6 +589,16 @@ export function rewriteHtmlDocument(
     const s = inlineStyles[i];
     if (s.textContent) {
       s.textContent = rewriteCssContent(s.textContent, pageUrl, currentZipPath, urlToZipMap);
+    }
+  }
+
+  // Reescreve atributos style inline em qualquer elemento que contenha url(...)
+  const elementsWithStyle = doc.querySelectorAll('[style]');
+  for (let i = 0; i < elementsWithStyle.length; i++) {
+    const el = elementsWithStyle[i];
+    const styleAttr = el.getAttribute('style');
+    if (styleAttr && /url\(/i.test(styleAttr)) {
+      el.setAttribute('style', rewriteCssContent(styleAttr, pageUrl, currentZipPath, urlToZipMap));
     }
   }
 
@@ -375,7 +616,11 @@ export function rewriteHtmlDocument(
     if (!src) continue;
     try {
       const resolvedUrl = new URL(src, pageUrl).href;
-      const targetZip = urlToZipMap.get(resolvedUrl) || urlToZipMap.get(src);
+      const cleanUrl = resolvedUrl.split('?')[0];
+      const targetZip =
+        urlToZipMap.get(resolvedUrl) ||
+        urlToZipMap.get(src) ||
+        urlToZipMap.get(cleanUrl);
       if (targetZip) {
         el.setAttribute('src', getRelativePath(currentZipPath, targetZip));
       } else if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
@@ -384,22 +629,45 @@ export function rewriteHtmlDocument(
     } catch {}
   }
 
-  // Reescreve links internos <a href="..."> para páginas baixadas
+  // Reescreve links <a href="..."> para páginas baixadas ou fallback amigável
   const anchors = doc.querySelectorAll('a[href]');
   for (let i = 0; i < anchors.length; i++) {
     const a = anchors[i];
     const href = a.getAttribute('href');
-    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:')) continue;
+    if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) continue;
     try {
       const resolvedUrl = new URL(href, pageUrl).href;
-      const targetZip = urlToZipMap.get(resolvedUrl) || urlToZipMap.get(href);
+      const cleanUrl = resolvedUrl.split('?')[0];
+      const targetZip =
+        urlToZipMap.get(resolvedUrl) ||
+        urlToZipMap.get(href) ||
+        urlToZipMap.get(cleanUrl);
       if (targetZip && targetZip.endsWith('.html')) {
         a.setAttribute('href', getRelativePath(currentZipPath, targetZip));
+      } else {
+        const u = new URL(resolvedUrl);
+        const b = new URL(pageUrl);
+        if (isSinglePageScope && u.origin === b.origin && u.pathname !== b.pathname) {
+          // Subpágina interna não capturada no modo 'Esta página': direciona para offline-fallback.html
+          a.setAttribute('href', getRelativePath(currentZipPath, 'offline-fallback.html'));
+          a.setAttribute('data-pluck-uncaptured', 'true');
+          a.setAttribute('title', 'Página não capturada neste pacote (Modo Esta página)');
+        } else if (u.origin !== b.origin) {
+          // Link para domínio externo não confirmado/capturado: direciona para offline-fallback.html (nunca tela branca)
+          a.setAttribute('href', getRelativePath(currentZipPath, 'offline-fallback.html'));
+          a.setAttribute('data-pluck-uncaptured', 'true');
+          a.setAttribute('title', `Domínio externo não incluído (${u.hostname})`);
+        }
       }
     } catch {}
   }
 
-  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  let outputHtml = '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  for (let i = 0; i < svgStyleStore.length; i++) {
+    outputHtml = outputHtml.replace(`<!--__pluck_svg_style_${i}__-->`, `<style>${svgStyleStore[i]}</style>`);
+  }
+
+  return outputHtml;
 }
 
 // Reescritor de URLs dentro de arquivos CSS (@import e url(...))
@@ -410,34 +678,62 @@ export function rewriteCssContent(
   urlToZipMap: Map<string, string>
 ): string {
   return cssText.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (match, quote, urlValue) => {
-    if (!urlValue || urlValue.startsWith('data:') || urlValue.startsWith('#')) {
+    if (!urlValue || urlValue.startsWith('data:') || urlValue.startsWith('#') || urlValue.startsWith('blob:')) {
       return match;
     }
     try {
       const resolved = new URL(urlValue, cssUrl).href;
-      const targetZip = urlToZipMap.get(resolved) || urlToZipMap.get(urlValue);
+      const cleanResolved = resolved.split('?')[0].split('#')[0];
+      const decodedResolved = decodeURIComponent(resolved);
+      const decodedClean = decodeURIComponent(cleanResolved);
+
+      let targetZip =
+        urlToZipMap.get(resolved) ||
+        urlToZipMap.get(urlValue) ||
+        urlToZipMap.get(cleanResolved) ||
+        urlToZipMap.get(decodedResolved) ||
+        urlToZipMap.get(decodedClean);
+
+      if (!targetZip) {
+        const filename = cleanResolved.split('/').pop();
+        if (filename && filename.includes('.')) {
+          for (const [k, v] of urlToZipMap.entries()) {
+            if (k.endsWith('/' + filename) || k.split('?')[0].endsWith('/' + filename)) {
+              targetZip = v;
+              break;
+            }
+          }
+        }
+      }
+
       if (targetZip) {
         const rel = getRelativePath(currentZipPath, targetZip);
         return `url(${quote}${rel}${quote})`;
+      } else if (
+        cleanResolved.endsWith('.svg') ||
+        cleanResolved.endsWith('.png') ||
+        cleanResolved.endsWith('.jpg') ||
+        cleanResolved.endsWith('.jpeg') ||
+        cleanResolved.endsWith('.gif') ||
+        cleanResolved.endsWith('.webp')
+      ) {
+        return `url(${quote}${BLOCKED_IMAGE_DATA}${quote})`;
       }
     } catch {}
     return match;
   });
 }
 
-// Reescritor de URLs estáticas dentro de arquivos JavaScript (ex: CDNs hardcoded em bundles)
+// Reescritor de URLs estáticas dentro de arquivos JavaScript (preserva integridade de sintaxe/construtores)
 export function rewriteJsContent(
   jsText: string,
-  currentZipPath: string,
-  urlToZipMap: Map<string, string>
+  _currentZipPath: string,
+  _urlToZipMap: Map<string, string>
 ): string {
-  let rewritten = jsText;
-  for (const [origUrl, targetZip] of urlToZipMap.entries()) {
-    if (origUrl.length < 8 || origUrl.startsWith('data:') || origUrl.startsWith('blob:')) continue;
-    if (rewritten.includes(origUrl)) {
-      const rel = getRelativePath(currentZipPath, targetZip);
-      rewritten = rewritten.replaceAll(origUrl, rel);
-    }
-  }
-  return rewritten;
+  // Bundles JavaScript modernos (Next.js, Webpack, Turbopack, Vite) utilizam construtores nativos
+  // como new URL(url) e sistemas de carregamento de chunks internos que quebram com TypeError
+  // quando URLs absolutas são substituídas cegamente por caminhos relativos (ex: ../../../_external/...).
+  // A interceptação dinâmica de rede (fetch, XHR, Image, Scripts) é assegurada de forma transparente
+  // pelo replay-shim.ts através do URL_MAP.
+  return jsText;
 }

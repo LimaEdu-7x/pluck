@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createBaixandoRow, createConfigItem } from './ui-helpers';
-import { cleanupResources, isSystemBrowserPage, setState } from './sidepanel';
+import { cleanupResources, isSystemBrowserPage, setState, detectAndRenderExternalDomains, setScope } from './sidepanel';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -181,5 +181,94 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     // Texto preservado com segurança
     expect(titleEl?.textContent).toBe(maliciousError);
     expect(subEl?.textContent).toBe(maliciousDetail);
+  });
+
+  describe('Confirmação Explícita de Domínios Externos na UI (Opção B)', () => {
+    beforeEach(() => {
+      document.body.innerHTML = `
+        <div id="sidePanelRoot">
+          <nav class="scope-tabs">
+            <button id="tab-esta"></button>
+            <button id="tab-vinc"></button>
+            <button id="tab-site"></button>
+          </nav>
+          <p id="scopeSub"></p>
+          <div id="limitsBox"></div>
+          <div id="targetBox"></div>
+          <div id="subdomainSwitch"></div>
+          <div id="pagsChips"></div>
+          <div id="mbChips"></div>
+          <div id="scopeSummary"></div>
+          <div id="panelFooter"></div>
+          <div id="externalDomainsBox" style="display: none;">
+            <div id="externalDomainsList"></div>
+          </div>
+        </div>
+      `;
+    });
+
+    it('renderiza checkboxes DESLIGADOS por padrão para domínios externos detectados', async () => {
+      setScope('paginas_vinculadas');
+      const html = `
+        <div>
+          <a href="https://store.landonorris.com/products">Store Sub</a>
+          <a href="https://landonorris.store/collections">Store Domain</a>
+        </div>
+      `;
+
+      await detectAndRenderExternalDomains(html, 'https://landonorris.com/');
+
+      const box = document.getElementById('externalDomainsBox');
+      expect(box?.style.display).toBe('flex');
+
+      const checkboxes = document.querySelectorAll<HTMLInputElement>('.external-domain-check');
+      expect(checkboxes.length).toBeGreaterThan(0);
+
+      // [REQUISITO CRÍTICO] Checkbox DESLIGADO por padrão
+      for (const cb of checkboxes) {
+        expect(cb.checked).toBe(false);
+      }
+    });
+
+    it('oculta o card de domínios externos quando o escopo é Esta Página', async () => {
+      setScope('esta_pagina');
+      const html = `<a href="https://landonorris.store/collections">Loja</a>`;
+
+      await detectAndRenderExternalDomains(html, 'https://landonorris.com/');
+
+      const box = document.getElementById('externalDomainsBox');
+      expect(box?.style.display).toBe('none');
+    });
+
+    it('solicita optional host permission ao marcar checkbox e desmarca se recusado', async () => {
+      setScope('paginas_vinculadas');
+      const html = `<a href="https://landonorris.store/collections">Loja</a>`;
+
+      // Mock da API chrome.permissions.request simulando recusa pelo usuário
+      const requestMock = vi.fn().mockResolvedValue(false);
+      (globalThis as any).chrome = {
+        permissions: {
+          request: requestMock
+        }
+      };
+
+      await detectAndRenderExternalDomains(html, 'https://landonorris.com/');
+
+      const checkbox = document.querySelector<HTMLInputElement>('.external-domain-check');
+      expect(checkbox).not.toBeNull();
+      expect(checkbox?.checked).toBe(false);
+
+      // Usuário clica no checkbox
+      checkbox!.checked = true;
+      await checkbox!.onchange?.(new Event('change'));
+
+      // Verifica que solicitou a permissão específica por origem
+      expect(requestMock).toHaveBeenCalledWith({
+        origins: ['https://landonorris.store/*']
+      });
+
+      // Como o usuário recusou (mockResolvedValue false), o checkbox volta a ser falso
+      expect(checkbox!.checked).toBe(false);
+    });
   });
 });

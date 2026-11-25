@@ -30,7 +30,8 @@ export function createCrawlSession(
     maxPages: limits.maxPages || 50,
     maxBytes: limits.maxBytes || 200 * 1024 * 1024, // 200 MB
     includeSubdomains: !!limits.includeSubdomains,
-    maxDepth: limits.maxDepth !== undefined ? limits.maxDepth : 3
+    maxDepth: limits.maxDepth !== undefined ? limits.maxDepth : 3,
+    allowedExternalDomains: limits.allowedExternalDomains ? [...limits.allowedExternalDomains] : []
   };
 
   return {
@@ -60,16 +61,18 @@ export function normalizeCrawlUrl(rawUrl: string): string {
   }
 }
 
-// Verifica se uma URL pertence ao escopo permitido (mesma origem ou subdomínio)
+// Verifica se uma URL pertence ao escopo permitido (mesma origem, subdomínio ou domínio externo autorizado)
 export function isUrlInCrawlScope(
   targetUrl: string,
   rootOrigin: string,
   rootHostname: string,
-  includeSubdomains: boolean
+  includeSubdomains: boolean,
+  allowedExternalDomains: string[] = []
 ): boolean {
   try {
     const isRootLocal = isLocalhostPage(rootOrigin);
-    // [FIEL-03] Se a raiz não for local, bloqueia qualquer URL para IP privado ou loopback
+    // [FIEL-03] SSRF Guard: Se a raiz não for local, bloqueia qualquer URL para IP privado ou loopback
+    // Esta verificação ocorre antes de qualquer regra de inclusão (inclusive allowedExternalDomains)
     if (!isRootLocal) {
       const validation = validateUrl(targetUrl, false);
       if (!validation.valid) {
@@ -94,6 +97,17 @@ export function isUrlInCrawlScope(
       }
     }
 
+    // [OPÇÃO B] Domínios externos explicitamente autorizados pelo usuário
+    if (allowedExternalDomains && allowedExternalDomains.length > 0) {
+      const targetHost = target.hostname.toLowerCase().replace(/^www\./, '');
+      for (const allowed of allowedExternalDomains) {
+        const cleanAllowed = allowed.toLowerCase().trim().replace(/^www\./, '');
+        if (targetHost === cleanAllowed || targetHost.endsWith('.' + cleanAllowed)) {
+          return true;
+        }
+      }
+    }
+
     return false;
   } catch {
     return false;
@@ -106,13 +120,29 @@ export function extractCrawlLinks(
   pageUrl: string,
   session: CrawlSession
 ): string[] {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const anchors = doc.querySelectorAll('a[href]');
+  let hrefs: string[] = [];
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const anchors = doc.querySelectorAll('a[href]');
+      for (let i = 0; i < anchors.length; i++) {
+        const h = anchors[i].getAttribute('href');
+        if (h) hrefs.push(h);
+      }
+    } catch {}
+  }
+  if (hrefs.length === 0) {
+    const matches = html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["']/gi);
+    for (const m of matches) {
+      if (m[1]) hrefs.push(m[1]);
+    }
+  }
+
   const found: string[] = [];
 
-  for (let i = 0; i < anchors.length; i++) {
-    const href = anchors[i].getAttribute('href');
+  for (let i = 0; i < hrefs.length; i++) {
+    const href = hrefs[i];
     if (!href) continue;
     if (
       href.startsWith('#') ||
@@ -137,7 +167,8 @@ export function extractCrawlLinks(
           cleanUrl,
           session.rootOrigin,
           session.rootHostname,
-          session.limits.includeSubdomains
+          session.limits.includeSubdomains,
+          session.limits.allowedExternalDomains || []
         )
       ) {
         if (!found.includes(cleanUrl)) {
@@ -148,6 +179,131 @@ export function extractCrawlLinks(
   }
 
   return found;
+}
+
+// Lista de redes sociais e plataformas externas genéricas a ignorar na detecção
+export const IGNORED_EXTERNAL_DOMAINS = new Set([
+  'facebook.com',
+  'twitter.com',
+  'x.com',
+  'instagram.com',
+  'youtube.com',
+  'tiktok.com',
+  'twitch.tv',
+  'linkedin.com',
+  'github.com',
+  'discord.com',
+  'discord.gg',
+  'spotify.com',
+  'apple.com',
+  'google.com',
+  'threads.net',
+  'pinterest.com',
+  'reddit.com',
+  't.me',
+  'whatsapp.com'
+]);
+
+// Detecta domínios externos vinculados na página (ex: loja externa, subdomínios redirecionados)
+export async function detectLinkedExternalDomains(
+  html: string,
+  pageUrl: string
+): Promise<string[]> {
+  const discovered = new Set<string>();
+  let baseObj: URL;
+  try {
+    baseObj = new URL(pageUrl);
+  } catch {
+    return [];
+  }
+
+  let hrefs: string[] = [];
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const anchors = doc.querySelectorAll('a[href]');
+      for (let i = 0; i < anchors.length; i++) {
+        const h = anchors[i].getAttribute('href');
+        if (h) hrefs.push(h);
+      }
+    } catch {}
+  }
+  if (hrefs.length === 0) {
+    const matches = html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["']/gi);
+    for (const m of matches) {
+      if (m[1]) hrefs.push(m[1]);
+    }
+  }
+
+  const baseCleanHost = baseObj.hostname.toLowerCase().replace(/^www\./, '');
+
+  for (const href of hrefs) {
+    if (
+      !href ||
+      href.startsWith('#') ||
+      href.startsWith('javascript:') ||
+      href.startsWith('mailto:') ||
+      href.startsWith('tel:')
+    ) {
+      continue;
+    }
+
+    try {
+      const resolved = new URL(href, pageUrl);
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') continue;
+
+      // SSRF guard preliminar
+      const check = validateUrl(resolved.href, isLocalhostPage(pageUrl));
+      if (!check.valid) continue;
+
+      const host = resolved.hostname.toLowerCase().replace(/^www\./, '');
+      if (host === baseCleanHost) continue; // Mesma raiz/domínio
+
+      // Ignora redes sociais
+      const isSocial = Array.from(IGNORED_EXTERNAL_DOMAINS).some(
+        (s) => host === s || host.endsWith('.' + s)
+      );
+      if (isSocial) continue;
+
+      // Ignora CDNs puras de assets estáticos
+      if (host.includes('cdn.') || host.includes('assets.') || host.includes('website-files.com')) {
+        continue;
+      }
+
+      discovered.add(host);
+    } catch {}
+  }
+
+  // Resolução de redirecionamento para identificar o domínio final (ex: store.landonorris.com -> landonorris.store)
+  const finalDomains = new Set<string>();
+
+  for (const domain of discovered) {
+    finalDomains.add(domain);
+    try {
+      const testUrl = `https://${domain}/`;
+      const res = await fetch(testUrl, {
+        method: 'HEAD',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(3000)
+      }).catch(() => null);
+
+      if (res && res.url) {
+        const dest = new URL(res.url);
+        const destHost = dest.hostname.toLowerCase().replace(/^www\./, '');
+        const check = validateUrl(res.url, isLocalhostPage(pageUrl));
+        if (check.valid && destHost !== baseCleanHost) {
+          const isSocial = Array.from(IGNORED_EXTERNAL_DOMAINS).some(
+            (s) => destHost === s || destHost.endsWith('.' + s)
+          );
+          if (!isSocial) {
+            finalDomains.add(destHost);
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return Array.from(finalDomains);
 }
 
 // Enfileira novos links respeitando os tetos de páginas e profundidade

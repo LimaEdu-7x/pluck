@@ -10,8 +10,14 @@ import {
   rewriteCssContent,
   rewriteJsContent
 } from './rewriter';
-import { createCrawlSession, extractCrawlLinks, enqueueDiscoveredLinks, recordDownloadedBytes } from './crawler';
-import { generateReadmeText, generateAbrirBat, generateAbrirPs1, generateAbrirSh } from './opener-scripts';
+import { createCrawlSession, extractCrawlLinks, enqueueDiscoveredLinks, recordDownloadedBytes, isUrlInCrawlScope } from './crawler';
+import {
+  generateReadmeText,
+  generateAbrirBat,
+  generateAbrirPs1,
+  generateAbrirSh,
+  generateOfflineFallbackHtml
+} from './opener-scripts';
 import { safePath } from '../security/safe-path';
 import { validateUrl, isLocalhostPage } from '../security/url-guard';
 import { isValidDocumentHtml } from '../capture/capture-engine';
@@ -114,6 +120,13 @@ export async function captureFaithfulSite(
 
     // 5. Mapeia todos os recursos capturados para caminhos dentro do ZIP
     for (const res of capturedResources) {
+      // Ignora recursos HTML secundários ou vazios coletados por prefetch no CDP
+      const isHtml = res.mimeType.includes('html') || res.url.endsWith('.html');
+      const isEmpty = typeof res.data === 'string' ? res.data.length === 0 : res.data.byteLength === 0;
+      if (isHtml && (isEmpty || mode === 'page')) {
+        continue;
+      }
+
       const zipPath = mapUrlToZipPath(res.url, pageUrl);
       if (!zipPath) continue; // [FIEL-09] Ignora URLs rejeitadas por política de segurança
       urlToZipMap.set(res.url, zipPath);
@@ -125,6 +138,82 @@ export async function captureFaithfulSite(
     // Registra a página inicial
     urlToZipMap.set(pageUrl, 'index.html');
     pagesCount = 1;
+
+    // 5.1 Baixa estaticamente qualquer recurso declarado no HTML (menu, hover, srcset, masks, imagens CDN)
+    // que não tenha sido acionado pelo browser durante o autoscroll do CDP
+    const staticDownloads = await downloadMissingStaticAssets(
+      mainHtml,
+      pageUrl,
+      pageUrl,
+      urlToZipMap,
+      files,
+      {
+        maxResources: MAX_CDP_RESOURCES,
+        maxBytes: MAX_CDP_BYTES,
+        currentTotalBytes: totalBytes
+      }
+    );
+    totalBytes += staticDownloads.addedBytes;
+    externalAssetsCount += staticDownloads.externalCount;
+
+    // 5.2 Baixa fontes ou imagens declaradas em CSS capturados pelo CDP que não foram requisitadas
+    for (const res of capturedResources) {
+      if ((res.mimeType.includes('css') || res.url.endsWith('.css')) && typeof res.data === 'string') {
+        const cssDownloads = await downloadMissingStaticAssets(
+          res.data,
+          res.url,
+          pageUrl,
+          urlToZipMap,
+          files,
+          {
+            maxResources: MAX_CDP_RESOURCES,
+            maxBytes: MAX_CDP_BYTES,
+            currentTotalBytes: totalBytes
+          }
+        );
+        totalBytes += cssDownloads.addedBytes;
+        externalAssetsCount += cssDownloads.externalCount;
+      }
+    }
+
+    // 5.3 Baixa modelos 3D, WASM, Rive, texturas e assets declarados em scripts JavaScript baixados ou coletados via CDP
+    const jsSources: { url: string; content: string }[] = [];
+    for (const [name, bytes] of Object.entries(files)) {
+      if (name.endsWith('.js') || name.endsWith('.mjs')) {
+        let jsUrl = pageUrl;
+        for (const [orig, mapped] of urlToZipMap.entries()) {
+          if (mapped === name) { jsUrl = orig; break; }
+        }
+        jsSources.push({ url: jsUrl, content: new TextDecoder().decode(bytes) });
+      }
+    }
+    for (const res of capturedResources) {
+      if (res.mimeType.includes('javascript') || res.url.endsWith('.js') || res.url.endsWith('.mjs')) {
+        const text = typeof res.data === 'string' ? res.data : new TextDecoder().decode(res.data);
+        jsSources.push({ url: res.url, content: text });
+      }
+    }
+
+    const seenJsUrls = new Set<string>();
+    for (const jsItem of jsSources) {
+      if (seenJsUrls.has(jsItem.url)) continue;
+      seenJsUrls.add(jsItem.url);
+
+      const jsDownloads = await downloadMissingStaticAssets(
+        jsItem.content,
+        jsItem.url,
+        pageUrl,
+        urlToZipMap,
+        files,
+        {
+          maxResources: MAX_CDP_RESOURCES,
+          maxBytes: MAX_CDP_BYTES,
+          currentTotalBytes: totalBytes
+        }
+      );
+      totalBytes += jsDownloads.addedBytes;
+      externalAssetsCount += jsDownloads.externalCount;
+    }
 
     // 6. Sessão de Crawler (se modo linked ou site)
     const crawlSession = createCrawlSession(pageUrl, options.limits);
@@ -152,27 +241,66 @@ export async function captureFaithfulSite(
         urlToZipMap.set(next.url, subPageZip);
         pagesCount++;
 
+        let actualSubPageZip = subPageZip;
         try {
           const res = await fetch(next.url);
-          // [FIEL-03] Valida destino final após redirecionamento
+          // [FIEL-03] Valida destino final após redirecionamento e verifica se está no escopo de crawl
           if (res.url) {
             const destCheck = validateUrl(res.url, isRootLocal);
             if (!destCheck.valid) {
               console.warn('[Crawler SSRF Guard] Redirecionamento bloqueado:', res.url);
               continue;
             }
+            if (
+              !isUrlInCrawlScope(
+                res.url,
+                crawlSession.rootOrigin,
+                crawlSession.rootHostname,
+                crawlSession.limits.includeSubdomains,
+                crawlSession.limits.allowedExternalDomains || []
+              )
+            ) {
+              console.warn('[Crawler] Redirecionamento para domínio fora do escopo permitido:', res.url);
+              continue;
+            }
+            if (res.url !== next.url) {
+              const mappedDestZip = mapUrlToZipPath(res.url, pageUrl);
+              if (mappedDestZip) {
+                actualSubPageZip = mappedDestZip;
+                urlToZipMap.set(res.url, actualSubPageZip);
+                urlToZipMap.set(res.url.split('?')[0], actualSubPageZip);
+                urlToZipMap.set(next.url, actualSubPageZip);
+                urlToZipMap.set(next.url.split('?')[0], actualSubPageZip);
+              }
+            }
           }
 
           if (res.ok) {
             const subHtml = await res.text();
             recordDownloadedBytes(crawlSession, subHtml.length);
-            const subLinks = extractCrawlLinks(subHtml, next.url, crawlSession);
+            const subLinks = extractCrawlLinks(subHtml, res.url || next.url, crawlSession);
             enqueueDiscoveredLinks(crawlSession, subLinks, next.depth);
 
+            // Descobre e baixa recursos estáticos da subpágina (imagens, css, fontes, scripts, etc.)
+            const subDownloads = await downloadMissingStaticAssets(
+              subHtml,
+              res.url || next.url,
+              pageUrl,
+              urlToZipMap,
+              files,
+              {
+                maxResources: MAX_CDP_RESOURCES,
+                maxBytes: MAX_CDP_BYTES,
+                currentTotalBytes: totalBytes
+              }
+            );
+            totalBytes += subDownloads.addedBytes;
+            externalAssetsCount += subDownloads.externalCount;
+
             // Reescreve e salva a subpágina
-            const rewrittenSubHtml = rewriteHtmlDocument(subHtml, next.url, subPageZip, urlToZipMap);
+            const rewrittenSubHtml = rewriteHtmlDocument(subHtml, res.url || next.url, actualSubPageZip, urlToZipMap);
             const encodedSub = new TextEncoder().encode(rewrittenSubHtml);
-            files[subPageZip] = encodedSub;
+            files[actualSubPageZip] = encodedSub;
             totalBytes += encodedSub.byteLength;
           }
         } catch {
@@ -183,6 +311,12 @@ export async function captureFaithfulSite(
 
     // 7. Processa e adiciona recursos ao ZIP
     for (const res of capturedResources) {
+      const isHtml = res.mimeType.includes('html') || res.url.endsWith('.html');
+      const isEmpty = typeof res.data === 'string' ? res.data.length === 0 : res.data.byteLength === 0;
+      if (isHtml && (isEmpty || mode === 'page')) {
+        continue;
+      }
+
       const zipPath = urlToZipMap.get(res.url) || mapUrlToZipPath(res.url, pageUrl);
       if (!zipPath) continue;
 
@@ -209,15 +343,75 @@ export async function captureFaithfulSite(
         dataBytes = res.data;
       }
 
+      // [WASM Guard] Valida integridade para arquivos WebAssembly (.wasm)
+      if (zipPath.endsWith('.wasm')) {
+        if (dataBytes.byteLength < 8) {
+          console.warn('[Faithful Engine] WASM coletado via CDP vazio (< 8 bytes), rejeitado:', res.url);
+          continue;
+        }
+        if (dataBytes[0] !== 0x00 || dataBytes[1] !== 0x61 || dataBytes[2] !== 0x73 || dataBytes[3] !== 0x6d) {
+          console.warn('[Faithful Engine] WASM coletado via CDP sem magic bytes 0061736d, rejeitado:', res.url);
+          continue;
+        }
+      }
+
+      const prevLen = files[zipPath]?.byteLength || 0;
       files[zipPath] = dataBytes;
-      totalBytes += dataBytes.byteLength;
+      totalBytes += (dataBytes.byteLength - prevLen);
+
+      // Garante que o par rive.wasm / rive_fallback.wasm esteja presente no pacote
+      if (zipPath.endsWith('/rive.wasm') || zipPath === 'rive.wasm') {
+        const fallbackZip = zipPath.replace(/rive\.wasm$/, 'rive_fallback.wasm');
+        if (!files[fallbackZip]) {
+          files[fallbackZip] = dataBytes;
+          urlToZipMap.set(res.url.replace(/rive\.wasm$/, 'rive_fallback.wasm'), fallbackZip);
+        }
+      } else if (zipPath.endsWith('/rive_fallback.wasm') || zipPath === 'rive_fallback.wasm') {
+        const mainZip = zipPath.replace(/rive_fallback\.wasm$/, 'rive.wasm');
+        if (!files[mainZip]) {
+          files[mainZip] = dataBytes;
+          urlToZipMap.set(res.url.replace(/rive_fallback\.wasm$/, 'rive.wasm'), mainZip);
+        }
+      }
+    }
+
+    // 7.1 Reescreve todos os arquivos CSS presentes em files (incluindo os baixados via crawler)
+    // para garantir que referências a fontes (.woff2), SVGs e imagens de fundo apontem para caminhos relativos locais
+    for (const zipPath of Object.keys(files)) {
+      if (zipPath.endsWith('.css')) {
+        let originalCssUrl = '';
+        for (const [rawUrl, tz] of urlToZipMap.entries()) {
+          if (tz === zipPath) {
+            originalCssUrl = rawUrl;
+            break;
+          }
+        }
+        if (!originalCssUrl) {
+          originalCssUrl = pageUrl;
+        }
+        try {
+          const cssText = new TextDecoder().decode(files[zipPath]);
+          const rewrittenCss = rewriteCssContent(cssText, originalCssUrl, zipPath, urlToZipMap);
+          const rewrittenBytes = new TextEncoder().encode(rewrittenCss);
+          const prevLen = files[zipPath]?.byteLength || 0;
+          files[zipPath] = rewrittenBytes;
+          totalBytes += (rewrittenBytes.byteLength - prevLen);
+        } catch {}
+      }
     }
 
     // 8. Reescreve e salva a página HTML principal
-    const rewrittenMainHtml = rewriteHtmlDocument(mainHtml, pageUrl, 'index.html', urlToZipMap);
+    const isSinglePage = mode === 'page';
+    const rewrittenMainHtml = rewriteHtmlDocument(mainHtml, pageUrl, 'index.html', urlToZipMap, isSinglePage);
     const mainHtmlBytes = new TextEncoder().encode(rewrittenMainHtml);
     files['index.html'] = mainHtmlBytes;
     totalBytes += mainHtmlBytes.byteLength;
+
+    // 8.0 Adiciona página de fallback offline amigável para rotas não capturadas
+    const fallbackHtml = generateOfflineFallbackHtml(pageTitle, pageUrl);
+    const fallbackBytes = new TextEncoder().encode(fallbackHtml);
+    files['offline-fallback.html'] = fallbackBytes;
+    totalBytes += fallbackBytes.byteLength;
 
     // 8.1. Grava urlmap.json com todas as URLs capturadas pelo CDP higienizadas (FIEL-04)
     const urlMapJsonObj: Record<string, string> = {};
@@ -259,4 +453,338 @@ export async function captureFaithfulSite(
       await recorder.stop().catch(() => {});
     }
   }
+}
+
+// Extrai candidatos a recursos estáticos declarados em HTML, CSS ou atributos
+export function extractStaticAssetCandidates(
+  html: string,
+  baseUrl: string
+): string[] {
+  const candidates = new Set<string>();
+
+  // 1. Tags padrão: img, source, video, audio, link, script
+  const tagRegexes = [
+    /<img\b[^>]*\bsrc=["']([^"']+)["']/gi,
+    /<source\b[^>]*\bsrc=["']([^"']+)["']/gi,
+    /<video\b[^>]*\bsrc=["']([^"']+)["']/gi,
+    /<video\b[^>]*\bposter=["']([^"']+)["']/gi,
+    /<audio\b[^>]*\bsrc=["']([^"']+)["']/gi,
+    /<link\b[^>]*\bhref=["']([^"']+)["']/gi,
+    /<script\b[^>]*\bsrc=["']([^"']+)["']/gi
+  ];
+  for (const regex of tagRegexes) {
+    for (const match of html.matchAll(regex)) {
+      if (match[1]) candidates.add(match[1]);
+    }
+  }
+
+  // 2. Atributos srcset (em img ou source)
+  const srcsetRegex = /(?:srcset)=["']([^"']+)["']/gi;
+  for (const match of html.matchAll(srcsetRegex)) {
+    const parts = match[1].split(',');
+    for (const part of parts) {
+      const u = part.trim().split(/\s+/)[0];
+      if (u) candidates.add(u);
+    }
+  }
+
+  // 3. Estilos inline ou tags style com url(...)
+  const urlRegex = /url\(\s*['"]?([^'")]+)['"]?\s*\)/gi;
+  for (const match of html.matchAll(urlRegex)) {
+    if (match[1]) candidates.add(match[1]);
+  }
+
+  // 4. Atributos comuns de lazy loading ou mídia
+  const dataSrcRegex = /\bdata-(?:src|original|lazy|srcset|bg)=["']([^"']+)["']/gi;
+  for (const match of html.matchAll(dataSrcRegex)) {
+    if (match[1]) candidates.add(match[1]);
+  }
+
+  // 5. URLs de CDN absolutas ou protocol-relative com extensões de mídia/3D/fontes conhecidas
+  const cdnRegex = /(?:https?:)?\/\/[^\s"'<>\(\)]+\.(?:webp|png|jpg|jpeg|svg|gif|ico|avif|woff2|woff|ttf|wasm|glb|gltf|riv|hdr|bin|json)/gi;
+  for (const match of html.matchAll(cdnRegex)) {
+    candidates.add(match[0]);
+  }
+
+  // 6. Caminhos relativos de assets estáticos conhecidos (precedidos por aspas, parênteses ou espaço)
+  const relRegex = /(?:^|[\s"'\(=])(?:\/)?(?:images|_next\/static|static|gl|rive|models|hdri|textures|fonts)\/[a-zA-Z0-9_\-\.\/]+\.(?:webp|png|jpg|jpeg|svg|gif|ico|avif|woff2|woff|ttf|wasm|glb|gltf|riv|hdr|bin|json)/gi;
+  for (const match of html.matchAll(relRegex)) {
+    const clean = match[0].replace(/^[\s"'\(=]+/, '');
+    if (clean) candidates.add(clean);
+  }
+
+  // 7. Rive WASM npm packages montados dinamicamente em bundles JS (ex: "name":"@rive-app/canvas-lite","version":"2.26.4")
+  const rivePkgRegex = /"name"\s*:\s*"(@rive-app\/[^"]+)"\s*,\s*"version"\s*:\s*"([^"]+)"/g;
+  for (const m of html.matchAll(rivePkgRegex)) {
+    const pkg = m[1];
+    const ver = m[2];
+    candidates.add(`https://unpkg.com/${pkg}@${ver}/rive.wasm`);
+    candidates.add(`https://unpkg.com/${pkg}@${ver}/rive_fallback.wasm`);
+    candidates.add(`https://cdn.jsdelivr.net/npm/${pkg}@${ver}/rive.wasm`);
+    candidates.add(`https://cdn.jsdelivr.net/npm/${pkg}@${ver}/rive_fallback.wasm`);
+  }
+
+  // 8. Base URLs identificadas no próprio script JS para resolução de assets 3D/WASM
+  const jsBaseRegex = /https?:\/\/[a-zA-Z0-9_\-\.]+(?:\/[a-zA-Z0-9_\-\.]+)*\/?/g;
+  const jsBaseUrls = new Set<string>();
+  if (baseUrl.includes('itsoffbrand.io') || baseUrl.includes('/gl') || baseUrl.includes('/rive') || baseUrl.includes('models') || baseUrl.includes('assets') || baseUrl.includes('static')) {
+    try {
+      jsBaseUrls.add(new URL('.', baseUrl).href);
+      jsBaseUrls.add(new URL('../', baseUrl).href);
+    } catch {}
+  }
+  for (const m of html.matchAll(jsBaseRegex)) {
+    const u = m[0];
+    if (u.includes('itsoffbrand.io') || u.includes('/gl') || u.includes('/rive') || u.includes('models') || u.includes('assets') || u.includes('static')) {
+      jsBaseUrls.add(u.endsWith('/') ? u : u + '/');
+    }
+  }
+
+  // 9. Arquivos 3D, WASM, HDR, Rive, JSON de fontes e texturas referenciados entre aspas em scripts JS
+  const jsQuotedRegex = /["']([a-zA-Z0-9_\-\.\/]+\.(?:wasm|riv|glb|gltf|hdr|json|webp|png|jpg|jpeg|svg|gif|ico|avif|ktx2|basis))["']/g;
+  for (const m of html.matchAll(jsQuotedRegex)) {
+    const raw = m[1];
+    if (!raw || raw.includes(' ') || raw.length > 200) continue;
+    const cleanRel = raw.replace(/^\/+/, '');
+    candidates.add(cleanRel);
+    for (const b of jsBaseUrls) {
+      try {
+        candidates.add(new URL(cleanRel, b).href);
+        if (!cleanRel.startsWith('gl/') && !b.includes('/gl')) {
+          candidates.add(new URL(`gl/${cleanRel}`, b).href);
+        }
+      } catch {}
+    }
+  }
+
+  // 10. Template literals dinâmicos em JS (ex: `/textures/head/${iQ}/diffuse.${iQ}`)
+  const jsTemplateRegex = /`([^`]+)`/g;
+  const commonFormats = ['webp', 'png', 'jpg', 'ktx2'];
+  for (const m of html.matchAll(jsTemplateRegex)) {
+    const tpl = m[1];
+    if (
+      tpl.includes('/textures/') ||
+      tpl.includes('/gl/') ||
+      tpl.includes('/models/') ||
+      tpl.includes('/fonts/') ||
+      tpl.includes('/rive/') ||
+      tpl.includes('/assets/')
+    ) {
+      for (const fmt of commonFormats) {
+        const expanded = tpl.replace(/\$\{[^}]+\}/g, fmt);
+        const cleanRel = expanded.replace(/^\/+/, '');
+        candidates.add(cleanRel);
+        for (const b of jsBaseUrls) {
+          try {
+            candidates.add(new URL(cleanRel, b).href);
+            if (!cleanRel.startsWith('gl/') && !b.includes('/gl')) {
+              candidates.add(new URL(`gl/${cleanRel}`, b).href);
+            }
+          } catch {}
+        }
+      }
+    }
+  }
+
+  // 11. Decoders especiais conhecidos em WebGL (Draco / Basis)
+  if (html.includes('draco') || html.includes('dracoLoader') || html.includes('draco_decoder')) {
+    for (const b of jsBaseUrls) {
+      try {
+        candidates.add(new URL('draco/draco_wasm_wrapper.js', b).href);
+        candidates.add(new URL('draco/draco_decoder.wasm', b).href);
+        candidates.add(new URL('draco_wasm_wrapper.js', b).href);
+        candidates.add(new URL('draco_decoder.wasm', b).href);
+      } catch {}
+    }
+  }
+
+  const validUrls: string[] = [];
+  for (const raw of candidates) {
+    if (
+      !raw ||
+      raw.startsWith('data:') ||
+      raw.startsWith('blob:') ||
+      raw.startsWith('#') ||
+      raw.startsWith('javascript:')
+    ) {
+      continue;
+    }
+    try {
+      const fullUrl = new URL(raw, baseUrl).href;
+      const parsed = new URL(fullUrl);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        validUrls.push(fullUrl);
+      }
+    } catch {}
+  }
+
+  return [...new Set(validUrls)];
+}
+
+// Baixa concorrentemente recursos estáticos descobertos que não foram capturados pelo CDP
+export async function downloadMissingStaticAssets(
+  html: string,
+  baseUrl: string,
+  rootPageUrl: string,
+  urlToZipMap: Map<string, string>,
+  files: Record<string, Uint8Array>,
+  limits?: { maxResources?: number; maxBytes?: number; currentTotalBytes?: number }
+): Promise<{ addedBytes: number; addedCount: number; externalCount: number }> {
+  const isRootLocal = isLocalhostPage(rootPageUrl);
+  const maxRes = limits?.maxResources || MAX_CDP_RESOURCES;
+  const maxB = limits?.maxBytes || MAX_CDP_BYTES;
+  let currentBytes = limits?.currentTotalBytes || 0;
+
+  let addedBytes = 0;
+  let addedCount = 0;
+  let externalCount = 0;
+
+  const candidates = extractStaticAssetCandidates(html, baseUrl);
+
+  const toFetch: { url: string; zipPath: string }[] = [];
+  for (const candUrl of candidates) {
+    const cleanCand = candUrl.split('?')[0];
+    if (urlToZipMap.has(candUrl) || urlToZipMap.has(cleanCand)) {
+      continue;
+    }
+
+    const check = validateUrl(candUrl, isRootLocal);
+    if (!check.valid) continue;
+
+    const zipPath = mapUrlToZipPath(candUrl, rootPageUrl);
+    if (!zipPath) continue;
+
+    if (files[zipPath]) {
+      urlToZipMap.set(candUrl, zipPath);
+      urlToZipMap.set(cleanCand, zipPath);
+      continue;
+    }
+
+    toFetch.push({ url: candUrl, zipPath });
+  }
+
+  if (toFetch.length === 0) {
+    return { addedBytes, addedCount, externalCount };
+  }
+
+  const CONCURRENCY = 12;
+  const queue = [...toFetch];
+
+  async function worker() {
+    while (queue.length > 0) {
+      if (Object.keys(files).length >= maxRes || currentBytes >= maxB) {
+        break;
+      }
+
+      const item = queue.shift();
+      if (!item) break;
+
+      try {
+        const resp = await fetch(item.url, { signal: AbortSignal.timeout(8000) });
+        if (!resp.ok) continue;
+
+        // [SSRF Guard] Valida URL final após eventuais redirecionamentos
+        if (resp.url) {
+          const postCheck = validateUrl(resp.url, isRootLocal);
+          if (!postCheck.valid) continue;
+        }
+
+        const buf = await resp.arrayBuffer();
+        if (buf.byteLength === 0) continue;
+
+        // [WASM Guard] Validação de integridade de arquivos WebAssembly
+        if (item.zipPath.endsWith('.wasm')) {
+          if (buf.byteLength < 8) {
+            console.warn('[Faithful Engine] WASM vazio (< 8 bytes) rejeitado:', item.url);
+            continue;
+          }
+          const checkUint = new Uint8Array(buf.slice(0, 4));
+          // Magic bytes: 0x00, 0x61, 0x73, 0x6d ('\0asm')
+          if (checkUint[0] !== 0x00 || checkUint[1] !== 0x61 || checkUint[2] !== 0x73 || checkUint[3] !== 0x6d) {
+            console.warn('[Faithful Engine] WASM sem magic bytes 0061736d rejeitado:', item.url);
+            continue;
+          }
+        }
+
+        const uint = new Uint8Array(buf);
+        files[item.zipPath] = uint;
+        urlToZipMap.set(item.url, item.zipPath);
+        urlToZipMap.set(item.url.split('?')[0], item.zipPath);
+
+        // Se baixou rive.wasm ou rive_fallback.wasm, garante que o par correspondente exista no ZIP
+        if (item.zipPath.endsWith('/rive.wasm') || item.zipPath === 'rive.wasm') {
+          const fallbackZip = item.zipPath.replace(/rive\.wasm$/, 'rive_fallback.wasm');
+          if (!files[fallbackZip]) {
+            files[fallbackZip] = uint;
+            urlToZipMap.set(item.url.replace(/rive\.wasm$/, 'rive_fallback.wasm'), fallbackZip);
+          }
+        } else if (item.zipPath.endsWith('/rive_fallback.wasm') || item.zipPath === 'rive_fallback.wasm') {
+          const mainZip = item.zipPath.replace(/rive_fallback\.wasm$/, 'rive.wasm');
+          if (!files[mainZip]) {
+            files[mainZip] = uint;
+            urlToZipMap.set(item.url.replace(/rive_fallback\.wasm$/, 'rive.wasm'), mainZip);
+          }
+        }
+
+        addedBytes += uint.byteLength;
+        currentBytes += uint.byteLength;
+        addedCount++;
+
+        if (item.zipPath.startsWith('_external/')) {
+          externalCount++;
+        }
+
+        // Se for CSS, extrai recursivamente @import e url(...) para baixar fontes e imagens declaradas no CSS
+        if (item.zipPath.endsWith('.css')) {
+          try {
+            const cssText = new TextDecoder().decode(buf);
+            const nestedUrls = cssText.matchAll(/url\(\s*['"]?([^'")]+)['"]?\s*\)/gi);
+            for (const nu of nestedUrls) {
+              const rawNu = nu[1];
+              if (!rawNu || rawNu.startsWith('data:') || rawNu.startsWith('blob:') || rawNu.startsWith('#')) continue;
+              try {
+                const nestedFull = new URL(rawNu, item.url).href;
+                const cleanNested = nestedFull.split('?')[0].split('#')[0];
+                const decodedNested = decodeURIComponent(nestedFull);
+                const decodedClean = decodeURIComponent(cleanNested);
+                if (!urlToZipMap.has(nestedFull) && !urlToZipMap.has(cleanNested)) {
+                  const checkNested = validateUrl(nestedFull, isRootLocal);
+                  if (!checkNested.valid) continue;
+                  const nestedZip = mapUrlToZipPath(nestedFull, rootPageUrl);
+                  if (nestedZip && !files[nestedZip]) {
+                    const nResp = await fetch(nestedFull, { signal: AbortSignal.timeout(8000) });
+                    if (nResp.ok) {
+                      if (nResp.url) {
+                        const nPostCheck = validateUrl(nResp.url, isRootLocal);
+                        if (!nPostCheck.valid) continue;
+                      }
+                      const nBuf = await nResp.arrayBuffer();
+                      if (nBuf.byteLength > 0) {
+                        const nUint = new Uint8Array(nBuf);
+                        files[nestedZip] = nUint;
+                        urlToZipMap.set(nestedFull, nestedZip);
+                        urlToZipMap.set(cleanNested, nestedZip);
+                        urlToZipMap.set(decodedNested, nestedZip);
+                        urlToZipMap.set(decodedClean, nestedZip);
+                        addedBytes += nUint.byteLength;
+                        currentBytes += nUint.byteLength;
+                        addedCount++;
+                        if (nestedZip.startsWith('_external/')) externalCount++;
+                      }
+                    }
+                  }
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+      } catch {
+        // Ignora falha de download individual
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+
+  return { addedBytes, addedCount, externalCount };
 }

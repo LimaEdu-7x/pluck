@@ -73,6 +73,9 @@
           </div>
           <p class="mode-desc">Arquivo único (.html) com estilos e imagens embutidos. Abre direto sem descompactar.</p>
         </div>
+        <div id="webglNotice" class="webgl-notice" role="alert" style="display: none;">
+          Esta página usa WebGL/3D: o HTML único fica estático/incompleto; use Página completa em ZIP
+        </div>
 
         <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="0">
           <div class="mode-header">
@@ -125,6 +128,18 @@
               <span class="switch-knob"></span>
             </div>
           </div>
+        </div>
+
+        <!-- Card de Domínios Externos Vinculados (Opção B - Confirmação Explícita) -->
+        <div class="card limits-card" id="externalDomainsBox" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="limits-title">DOMÍNIOS EXTERNOS VINCULADOS</span>
+            <span class="security-badge" style="font-size: 9px; padding: 1px 6px;">CONFIRMAÇÃO NECESSÁRIA</span>
+          </div>
+          <p class="limits-footnote" style="margin: 2px 0 6px 0;">
+            Links para outras origens detectados nesta página. Só serão capturados se autorizados individualmente:
+          </p>
+          <div id="externalDomainsList" style="display: flex; flex-direction: column; gap: 6px;"></div>
         </div>
 
         <!-- Honest Target Output Card for Single Page (Zero marketing) -->

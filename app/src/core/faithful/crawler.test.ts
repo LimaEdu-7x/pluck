@@ -4,7 +4,8 @@ import {
   isUrlInCrawlScope,
   extractCrawlLinks,
   enqueueDiscoveredLinks,
-  recordDownloadedBytes
+  recordDownloadedBytes,
+  detectLinkedExternalDomains
 } from './crawler';
 
 describe('Crawler BFS Fiel: Escopo de Domínio e Fila de Crawl', () => {
@@ -77,5 +78,74 @@ describe('Crawler BFS Fiel: Escopo de Domínio e Fila de Crawl', () => {
     // Ultrapassa 1 MB
     expect(recordDownloadedBytes(session, 600 * 1024)).toBe(true);
     expect(session.isFinished).toBe(true);
+  });
+
+  describe('Domínios Externos Vinculados com Confirmação Explícita (Opção B)', () => {
+    it('permite páginas de domínio externo explicitamente autorizado em allowedExternalDomains', () => {
+      const allowed = ['landonorris.store'];
+      expect(isUrlInCrawlScope('https://landonorris.store/', root, 'meusite.com', false, allowed)).toBe(true);
+      expect(isUrlInCrawlScope('https://landonorris.store/collections/featured', root, 'meusite.com', false, allowed)).toBe(true);
+      expect(isUrlInCrawlScope('https://shop.landonorris.store/item', root, 'meusite.com', false, allowed)).toBe(true);
+    });
+
+    it('bloqueia domínios externos não autorizados mesmo quando outro domínio está na lista', () => {
+      const allowed = ['landonorris.store'];
+      expect(isUrlInCrawlScope('https://outrodominio.com/', root, 'meusite.com', false, allowed)).toBe(false);
+      expect(isUrlInCrawlScope('https://evil.com/hack', root, 'meusite.com', false, allowed)).toBe(false);
+    });
+
+    it('mantém SSRF guard ativo bloqueando localhost/IP privado mesmo se informado em allowedExternalDomains', () => {
+      const allowedWithLocalhost = ['127.0.0.1', 'localhost', '192.168.1.1'];
+      expect(isUrlInCrawlScope('http://127.0.0.1:8080/admin', root, 'meusite.com', false, allowedWithLocalhost)).toBe(false);
+      expect(isUrlInCrawlScope('http://localhost:3000/keys', root, 'meusite.com', false, allowedWithLocalhost)).toBe(false);
+      expect(isUrlInCrawlScope('http://192.168.1.1/router', root, 'meusite.com', false, allowedWithLocalhost)).toBe(false);
+    });
+
+    it('extractCrawlLinks inclui domínios externos autorizados e ignora não autorizados', () => {
+      const sessionWithAllowed = createCrawlSession('https://meusite.com/', {
+        allowedExternalDomains: ['landonorris.store']
+      });
+
+      const html = `
+        <div>
+          <a href="/sobre">Sobre</a>
+          <a href="https://landonorris.store/collections">Loja Oficial</a>
+          <a href="https://externo-nao-autorizado.com/">Outro</a>
+          <a href="https://instagram.com/perfil">Instagram</a>
+        </div>
+      `;
+
+      const links = extractCrawlLinks(html, 'https://meusite.com/', sessionWithAllowed);
+
+      expect(links).toContain('https://meusite.com/sobre');
+      expect(links).toContain('https://landonorris.store/collections');
+      expect(links).not.toContain('https://externo-nao-autorizado.com/');
+      expect(links).not.toContain('https://instagram.com/perfil');
+    });
+
+    it('detectLinkedExternalDomains descobre domínios externos legítimos e descarta redes sociais e IPs privados (SSRF)', async () => {
+      const html = `
+        <div>
+          <a href="/local">Local</a>
+          <a href="https://store.landonorris.com/products">Store Subdomain</a>
+          <a href="https://landonorris.store/collections">Store Domain</a>
+          <a href="https://www.instagram.com/landonorris">Instagram</a>
+          <a href="https://twitter.com/landonorris">Twitter</a>
+          <a href="http://127.0.0.1:8080/evil">Evil Localhost</a>
+          <a href="http://192.168.1.1/router">Evil Router</a>
+          <a href="https://cdn.prod.website-files.com/asset.js">CDN Asset</a>
+        </div>
+      `;
+
+      const detected = await detectLinkedExternalDomains(html, 'https://landonorris.com/');
+
+      expect(detected).toContain('landonorris.store');
+      expect(detected).not.toContain('www.instagram.com');
+      expect(detected).not.toContain('instagram.com');
+      expect(detected).not.toContain('twitter.com');
+      expect(detected).not.toContain('127.0.0.1');
+      expect(detected).not.toContain('192.168.1.1');
+      expect(detected).not.toContain('cdn.prod.website-files.com');
+    });
   });
 });

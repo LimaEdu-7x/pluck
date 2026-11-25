@@ -354,6 +354,18 @@ input[type="checkbox"]:focus-visible {
   text-overflow: ellipsis;
 }
 
+.webgl-notice {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--warning, #eab308);
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+  margin-top: -2px;
+  margin-bottom: 4px;
+}
+
 /* AUTOSCROLL CARD (64px) */
 .autoscroll-card {
   display: flex;

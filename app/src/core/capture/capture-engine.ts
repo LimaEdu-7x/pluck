@@ -555,11 +555,18 @@ export async function capturePageHtml(
 
   const bypassStyle = doc.createElement('style');
   bypassStyle.textContent = `
-    .transition-w, .preloader, [class*="preloader"], [id*="preloader"] {
+    .transition-w, .preloader, [class*="preloader"], [id*="preloader"], .high-line-reveal {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
+    }
+    .gl-wrap {
+      z-index: 0 !important;
+    }
+    section.is-otot-home {
+      background-color: #f4f4ed !important;
+      color: #3b3c38 !important;
     }
     [data-reveal], [data-choreo], [data-draw-rule], [data-draw-tick], [data-draw-eyebrow], [data-reveal-group] {
       opacity: 1 !important;
