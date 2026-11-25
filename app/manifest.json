@@ -29,8 +29,10 @@
     "activeTab",
     "scripting",
     "sidePanel",
-    "downloads",
-    "contextMenus"
+    "downloads"
+  ],
+  "optional_permissions": [
+    "debugger"
   ],
   "host_permissions": [],
   "optional_host_permissions": [

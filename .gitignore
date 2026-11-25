@@ -21,3 +21,4 @@ app/.tmp-profile*
 scratch/
 
 app/tests/screenshots/
+app/tests/clone-proof/

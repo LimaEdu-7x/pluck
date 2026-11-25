@@ -100,3 +100,21 @@ export function createModeCard(
 
   return card;
 }
+
+export function createMetricRow(label: string, val: string, valClass?: string): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'metrics-row';
+
+  const lbl = document.createElement('span');
+  lbl.className = 'metrics-lbl';
+  lbl.textContent = label;
+
+  const v = document.createElement('span');
+  v.className = valClass ? `metrics-val ${valClass}` : 'metrics-val';
+  v.textContent = val;
+
+  row.appendChild(lbl);
+  row.appendChild(v);
+  return row;
+}
+

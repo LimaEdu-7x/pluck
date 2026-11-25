@@ -7,241 +7,548 @@
   <link rel="stylesheet" href="./src/ui/style.css">
 </head>
 <body>
-  <div class="vertical-window" id="verticalContainer" role="region" aria-label="Pluck Painel Lateral">
-    <header class="app-header">
-      <div class="brand">
-        <picture class="brand-picture">
-          <source srcset="/icons/pluck-symbol-dark.svg" media="(prefers-color-scheme: dark)">
-          <img src="/icons/pluck-symbol-color.svg" class="brand-logo" alt="Logotipo do Pluck">
-        </picture>
-        <span class="brand-title">Pluck</span>
-        <span class="brand-version">v0.1.0</span>
+  <div class="side-panel-app" id="sidePanelRoot" role="region" aria-label="Pluck Painel Lateral">
+    
+    <!-- TOP HEADER (48 px) -->
+    <header class="panel-header">
+      <div class="brand-cluster">
+        <div class="brand-logo" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M5 3H15C18.3137 3 21 5.68629 21 9V17C21 19.2091 19.2091 21 17 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3Z" fill="var(--text)"/>
+            <path d="M15 3C18.3137 3 21 5.68629 21 9C21 12.3137 18.3137 15 15 15C11.6863 15 9 12.3137 9 9C9 5.68629 11.6863 3 15 3Z" fill="var(--accent)"/>
+          </svg>
+        </div>
+        <span class="brand-name">Pluck</span>
+        <span class="brand-tag">v0.2.0 · Painel Lateral</span>
       </div>
-      <div class="domain-pill" id="domainPill" role="status" aria-label="Origem da página ativa">
+      <div class="domain-pill" id="headerDomainPill" role="status" aria-label="Domínio da página ativa">
         <span class="status-dot" id="domainDot"></span>
         <span id="domainText">localhost</span>
       </div>
     </header>
 
-    <div class="vertical-body">
-      <!-- 1. State Início -->
-      <div class="ui-state active" id="stateInicio">
-        <div class="section-label">MODOS DE EXTRAÇÃO</div>
-        <div class="mode-card-list" id="modeCardList" role="radiogroup" aria-label="Modos de Extração">
-          <!-- Injected dynamically -->
+    <!-- SCROLLABLE BODY WITH 9 VIEW STATES -->
+    <main class="panel-body">
+      
+      <!-- 1. INÍCIO VIEW -->
+      <section class="view-state active" id="view-inicio" aria-label="Configuração de Captura">
+        <!-- Origin Card -->
+        <div class="card origin-card">
+          <div class="origin-info">
+            <span class="origin-title" id="originTitle">Carregando aba...</span>
+            <span class="origin-url" id="originUrl">http://localhost</span>
+          </div>
+          <span class="security-badge" id="securityBadge">HTTPS (Seguro)</span>
         </div>
 
-        <div class="section-label">INFORMAÇÕES DA ABA ATIVA</div>
-        <div class="data-row">
-          <span class="data-label">Título da página</span>
-          <span class="data-value" id="tabTitle">Aguardando...</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Endereço (URL)</span>
-          <span class="data-value" id="tabUrl" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">http://localhost</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Status da página</span>
-          <span class="data-value" id="tabStatus">Pronto</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Itens detectados</span>
-          <span class="data-value" id="tabItems">Analisando</span>
+        <!-- Scope Tabs -->
+        <nav class="scope-tabs" role="tablist" aria-label="Escopo da captura">
+          <button type="button" class="scope-tab active" id="tab-esta" role="tab" aria-selected="true">Esta página</button>
+          <button type="button" class="scope-tab" id="tab-vinc" role="tab" aria-selected="false">Páginas vinculadas</button>
+          <button type="button" class="scope-tab" id="tab-site" role="tab" aria-selected="false">Site inteiro</button>
+        </nav>
+        <p class="scope-subtitle" id="scopeSub">Captura fiel da aba atual com recursos renderizados no DOM.</p>
+
+        <!-- Mode Selector (3 cards of 64px) -->
+        <span class="mode-label">MODO DE EXTRAÇÃO</span>
+
+        <div class="card interactive mode-card selected" id="mode-zip" role="radio" aria-checked="true" tabindex="0">
+          <div class="mode-header">
+            <div class="mode-left">
+              <span class="mode-radio"></span>
+              <span class="mode-title">Página completa em ZIP</span>
+            </div>
+            <span class="mode-badge">PADRÃO</span>
+          </div>
+          <p class="mode-desc">HTML, CSS, fontes e imagens em pacote .zip offline.</p>
         </div>
 
-        <div class="info-box">
-          <div class="info-box-title">Armazenamento local seguro</div>
-          <div class="info-box-desc">100% no seu navegador · sem telemetria nem envio de dados para servidores externos.</div>
+        <div class="card interactive mode-card" id="mode-html" role="radio" aria-checked="false" tabindex="0">
+          <div class="mode-header">
+            <div class="mode-left">
+              <span class="mode-radio"></span>
+              <span class="mode-title">Somente HTML da página</span>
+            </div>
+            <span class="mode-badge">LEVE</span>
+          </div>
+          <p class="mode-desc">Apenas o arquivo .html limpo, sem imagens ou CSS.</p>
         </div>
 
-        <div style="margin-top: var(--space-3); text-align: center;">
-          <button type="button" id="openWindowBtn" class="btn-secondary" style="height: 32px; font-size: 11px;">
-            Abrir Janela Horizontal (720x400)
-          </button>
+        <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="0">
+          <div class="mode-header">
+            <div class="mode-left">
+              <span class="mode-radio"></span>
+              <span class="mode-title">Somente imagens em ZIP</span>
+            </div>
+            <span class="mode-badge">GALERIA</span>
+          </div>
+          <p class="mode-desc">Todas as imagens da página (PNG, JPG, SVG) em .zip.</p>
         </div>
-      </div>
 
-      <!-- 2. State Analisando -->
-      <div class="ui-state" id="stateAnalisando">
-        <div class="state-header" style="margin-top: var(--space-3);">
-          <div class="state-title">Varredura do DOM em andamento...</div>
-          <div class="state-subtitle" id="analisandoSubtitle">Analisando recursos da página...</div>
-        </div>
-        <div id="analisandoList">
-          <div class="data-row">
-            <span class="data-label">Documento HTML principal</span>
-            <span class="data-value">1 arquivo</span>
+        <!-- Autoscroll Toggle -->
+        <div class="card autoscroll-card">
+          <div class="autoscroll-left">
+            <span class="autoscroll-dot" id="autoDot"></span>
+            <div class="autoscroll-texts">
+              <span class="autoscroll-title">Rolar a página para carregar tudo</span>
+              <span class="autoscroll-desc">Carrega imagens e animações antes de salvar.</span>
+              <span class="autoscroll-speed">Velocidade: 500 ms por passo de rolagem</span>
+            </div>
           </div>
-          <div class="data-row">
-            <span class="data-label">Folhas de estilo (CSS)</span>
-            <span class="data-value" id="cssCount">—</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Fontes tipográficas (WOFF2)</span>
-            <span class="data-value" id="fontCount">—</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Imagens e gráficos vetoriais</span>
-            <span class="data-value" id="imgCount">—</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Scripts dinâmicos</span>
-            <span class="data-value">Ignorados (segurança)</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 3. State Baixando -->
-      <div class="ui-state" id="stateBaixando">
-        <div class="state-header" style="margin-top: var(--space-3);">
-          <div class="state-title" id="baixandoTitle">Empacotando e baixando arquivos...</div>
-          <div class="state-subtitle" id="baixandoSubtitle">Salvando no pacote sem congelar o navegador</div>
-        </div>
-        <div class="prog-card">
-          <div class="prog-header">
-            <span class="prog-percent" id="baixandoPercent">0%</span>
-            <span class="prog-count" id="baixandoCount">Iniciando download...</span>
-          </div>
-          <div class="prog-bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-            <div class="prog-bar-fill" id="baixandoProgressFill" style="width: 0%;"></div>
+          <div class="switch-track" id="autoSwitch" role="switch" aria-checked="true" tabindex="0" aria-label="Rolar página automaticamente">
+            <span class="switch-knob"></span>
           </div>
         </div>
 
-        <div class="baixando-list" id="baixandoList" style="margin-top: var(--space-3);">
-          <!-- Dynamic resource rows with status dot and status label -->
-        </div>
-
-        <div class="info-box" id="baixandoInfoBox" style="margin-top: var(--space-3);">
-          <div class="info-box-title" id="baixandoBoxTitle">Salvando arquivos na pasta Downloads</div>
-          <div class="info-box-desc" id="baixandoBoxDesc">Processamento 100% local direto no seu navegador.</div>
-        </div>
-
-        <div style="margin-top: var(--space-4);">
-          <button type="button" id="cancelDownloadBtn" class="btn-secondary" style="width: 100%; height: 44px;">
-            Cancelar download
-          </button>
-          <div class="footer-note" style="margin-top: 4px; text-align: center;">
-            A memória temporária será liberada
+        <!-- Dynamic Scope Specific Section (Crawler Limits: Website Downloader Controls) -->
+        <div class="card limits-card" id="limitsBox" style="display: none;">
+          <span class="limits-title">LIMITES DE RASTREAMENTO (CRAWLER)</span>
+          <div class="limits-row">
+            <span class="limits-label">Parar após:</span>
+            <div class="limits-chips" id="pagsChips">
+              <span class="limits-chip" tabindex="0">25 pág</span>
+              <span class="limits-chip active" tabindex="0">50 pág</span>
+              <span class="limits-chip" tabindex="0">100 pág</span>
+            </div>
           </div>
-        </div>
-      </div>
-
-      <!-- 4. State Pronto -->
-      <div class="ui-state" id="statePronto">
-        <div class="state-header" style="margin-top: var(--space-3);">
-          <div class="state-title ok">Download concluído</div>
-          <div class="state-subtitle" id="prontoSubtitle">Todos os recursos foram processados e salvos localmente</div>
-        </div>
-        <div class="result-card">
-          <div class="result-card-header">
-            <span class="result-card-title" id="prontoFilename">pagina.html</span>
-            <span class="result-badge">CONCLUÍDO</span>
+          <div class="limits-row">
+            <span class="limits-label">Ou após:</span>
+            <div class="limits-chips" id="mbChips">
+              <span class="limits-chip" tabindex="0">50 MB</span>
+              <span class="limits-chip active" tabindex="0">100 MB</span>
+              <span class="limits-chip" tabindex="0">200 MB</span>
+            </div>
           </div>
-          <div class="result-card-meta" id="prontoDetails">Processando...</div>
-        </div>
-
-        <div class="section-label" style="margin-top: var(--space-4);">RESUMO DA CAPTURA</div>
-        <div id="prontoSummaryRows">
-          <div class="data-row">
-            <span class="data-label">Arquivos salvos</span>
-            <span class="data-value" id="sumSavedFiles">1 arquivo</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Recursos externos ignorados</span>
-            <span class="data-value" id="sumIgnoredFiles">Nenhum</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Tempo total decorrido</span>
-            <span class="data-value" id="sumElapsedTime">0 s</span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">Destino de salvamento</span>
-            <span class="data-value">Pasta Downloads do sistema</span>
+          <div class="limits-row">
+            <span class="limits-label">Incluir subdomínios:</span>
+            <div class="switch-track off" id="subdomainSwitch" role="switch" aria-checked="false" tabindex="0" aria-label="Incluir subdomínios do mesmo site">
+              <span class="switch-knob"></span>
+            </div>
           </div>
         </div>
 
-        <!-- Notice Box Neutra (Modo HTML) -->
-        <div class="info-box" id="prontoNoticeBox" style="margin-top: var(--space-4);">
-          <div class="info-box-title">Arquivo HTML autônomo</div>
-          <div class="info-box-desc">Salvo sem folhas CSS ou imagens vinculadas. Ideal para visualização rápida e análise estrutural.</div>
+        <!-- Honest Target Output Card for Single Page (Zero marketing) -->
+        <div class="card limits-card" id="targetBox">
+          <span class="limits-title">DESTINO DO ARQUIVO</span>
+          <span class="origin-title">Pasta padrão de Downloads do navegador</span>
+          <p class="limits-footnote">Salva diretamente no disco local, sem nuvem ou telemetria.</p>
         </div>
-        <!-- Notice Box Alerta (ZIP Incompleto/CORS) -->
-        <div class="notice-box-warn" id="prontoWarnBox" style="display: none; margin-top: var(--space-4);">
-          <div class="info-box-title">Aviso: pacote incompleto</div>
-          <div class="info-box-desc" id="prontoWarnDesc">Alguns recursos externos foram ignorados por CORS ou limites de tamanho.</div>
-        </div>
-      </div>
 
-      <!-- 5. State Erro -->
-      <div class="ui-state" id="stateErro">
-        <div class="state-header" style="margin-top: var(--space-3);">
-          <div class="state-title err">Página de sistema incompatível</div>
-          <div class="state-subtitle">Restrição de segurança da plataforma do navegador</div>
-        </div>
-        <div class="info-box">
-          <div class="info-box-title">Restrição de Segurança do Navegador:</div>
-          <div class="info-box-desc">
-            O Pluck não tem autorização para atuar sobre abas internas protegidas (chrome://, edge://, about:). Mude para uma aba comum com endereço web regular (HTTP ou HTTPS) para realizar o arquivamento.
-          </div>
-        </div>
-        <div class="guide-list">
-          <div class="guide-item">
-            <span class="guide-num">1.</span>
-            <span>Navegue até qualquer página web pública (HTTP ou HTTPS).</span>
-          </div>
-          <div class="guide-item">
-            <span class="guide-num">2.</span>
-            <span>Para arquivos PDF, utilize o botão Salvar nativo do leitor.</span>
-          </div>
-          <div class="guide-item">
-            <span class="guide-num">3.</span>
-            <span>Reabra o painel do Pluck na aba desejada.</span>
-          </div>
-        </div>
-      </div>
+        <!-- Useful Summary right above button -->
+        <div class="summary-text-box" id="scopeSummary">Captura restrita à aba ativa (1 página)</div>
+      </section>
 
-      <!-- 6. State Permissão -->
-      <div class="ui-state" id="statePermissao">
-        <div class="state-header" style="margin-top: var(--space-3);">
-          <div class="state-title">Autorização de leitura necessária</div>
-          <div class="state-subtitle">O Pluck solicita permissão temporária para ler os estilos, imagens e fontes hospedados no domínio desta aba.</div>
-        </div>
-        <div class="info-box">
-          <div class="info-box-title">Compromisso de Privacidade Local:</div>
-          <div class="info-box-desc">
-            Nenhum arquivo ou dado é enviado para servidores externos. Todo o processo de inspeção e compactação ocorre de forma isolada na sua máquina.
+      <!-- 2. ROLANDO VIEW -->
+      <section class="view-state" id="view-rolando" aria-label="Rolando a página">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot"></span>
+            <span>Rolando a página para carregar tudo...</span>
           </div>
+          <span class="state-status-sub">Disparando lazy-loading e IntersectionObserver</span>
         </div>
-      </div>
 
-      <!-- 7. State Login -->
-      <div class="ui-state" id="stateLogin">
-        <div class="state-header" style="margin-top: var(--space-3);">
-          <div class="state-title warn">Página com login detectada</div>
-          <div class="state-subtitle">Sessão autenticada ativa no navegador</div>
-        </div>
-        <div class="notice-box-warn">
-          <div class="info-box-title">Atenção ao conteúdo sob autenticação:</div>
-          <div class="info-box-desc">
-            Esta página requer credenciais de acesso. O Pluck capturará apenas os elementos visuais estáticos atualmente exibidos na tela. Senhas, cookies de sessão e tokens privados nunca são incluídos no pacote ZIP.
+        <div class="card progress-box">
+          <div class="prog-top">
+            <span class="prog-lbl">Progresso da rolagem:</span>
+            <span class="prog-pct" id="scrollPct">0 de 0 px (0%)</span>
           </div>
-        </div>
-        <label class="consent-row">
-          <input type="checkbox" id="loginConsentCheck">
-          <div>
-            <div class="consent-label">Compreendo e autorizo o salvamento desta página</div>
-            <div class="consent-sub">✓ Cookies e senhas são estritamente excluídos</div>
+          <div class="prog-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            <div class="prog-fill" id="scrollFill" style="width: 0%;"></div>
           </div>
-        </label>
-      </div>
-    </div>
+          <span class="prog-active-file" id="scrollStepNote">Iniciando rolagem suave do DOM...</span>
+        </div>
 
-    <footer class="vertical-footer">
-      <button class="btn-primary" id="mainActionBtn" aria-label="Executar ação principal">
-        Baixar somente o HTML
-      </button>
-      <div class="btn-subtext" id="actionSubtext">Processamento local direto no navegador</div>
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">MÉTRICAS MEDIDAS DO DOM</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Posição vertical:</span>
+              <span class="metrics-val" id="scrollVerticalPos">0 px de 0 px</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Imagens requisitadas:</span>
+              <span class="metrics-val" id="scrollImagesCount">0 imagens carregadas pelo DOM</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Passos executados:</span>
+              <span class="metrics-val" id="scrollStepsCount">0 passos de rolagem</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 4px; display: block;">O QUE FAZER AGORA</span>
+          <p class="limits-footnote" style="color: var(--text);">Aguarde a rolagem atingir o rodapé ou pule agora para salvar os recursos carregados até este momento.</p>
+        </div>
+      </section>
+
+      <!-- 3. ANALISANDO VIEW -->
+      <section class="view-state" id="view-analisando" aria-label="Analisando páginas">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot"></span>
+            <span>Analisando páginas e dependências...</span>
+          </div>
+          <span class="state-status-sub">Mapeando estrutura do DOM e fila de URLs internas</span>
+        </div>
+
+        <div class="card">
+          <div class="origin-info">
+            <span class="origin-title" id="analisandoPagesCount" style="font-size: 13px;">1 página detectada</span>
+            <span class="origin-url" id="analisandoResCount">Mapeando recursos no domínio...</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">FILA DE RASTREAMENTO DO CRAWLER</span>
+          <div class="metrics-table" id="analisandoQueueList">
+            <div class="metrics-row">
+              <span class="metrics-lbl"><strong style="color: var(--accent);">[Pág 1]</strong> / (Página Inicial)</span>
+              <span class="metrics-val" style="color: var(--accent);">analisando nós do DOM...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-text-box" id="analisandoSummary">Varredura em andamento...</div>
+      </section>
+
+      <!-- 4. BAIXANDO VIEW -->
+      <section class="view-state" id="view-baixando" aria-label="Baixando recursos">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot"></span>
+            <span>Baixando e compactando recursos...</span>
+          </div>
+          <span class="state-status-sub">Processamento local com motor fflate</span>
+        </div>
+
+        <div class="card progress-box">
+          <div class="prog-top">
+            <span class="prog-lbl">Progresso da captura:</span>
+            <span class="prog-pct" id="downPct">0% CONCLUÍDO</span>
+          </div>
+          <div class="prog-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            <div class="prog-fill" id="downFill" style="width: 0%;"></div>
+          </div>
+          <span class="prog-active-file" id="downFile">Iniciando captura de recursos...</span>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">MÉTRICAS DA TRANSFERÊNCIA</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Páginas processadas:</span>
+              <span class="metrics-val" id="cntPages">1 de 1 página (100%)</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Recursos salvos:</span>
+              <span class="metrics-val" id="cntRes">0 de 0 arquivos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Volume transferido:</span>
+              <span class="metrics-val" id="cntMb">0,0 MB transferidos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Tempo decorrido:</span>
+              <span class="metrics-val" id="cntTime">00:00 decorridos</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="downNextBox">
+          <span class="limits-title" style="color: var(--accent); margin-bottom: 4px; display: block;">Próximo na fila de download:</span>
+          <span class="origin-title" id="downNextTitle">Processando página ativa</span>
+          <span class="origin-url" id="downNextDesc">Gravando arquivos no pacote local</span>
+        </div>
+      </section>
+
+      <!-- 5. PAUSADO VIEW -->
+      <section class="view-state" id="view-pausado" aria-label="Download em pausa">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot warn"></span>
+            <span style="color: var(--status-warn);">Download em pausa</span>
+          </div>
+          <span class="state-status-sub">A captura foi interrompida com segurança pelo usuário</span>
+        </div>
+
+        <div class="card" style="background: var(--warn-bg); border-color: var(--warn-border);">
+          <span class="origin-title" style="color: var(--status-warn);">Progresso Retido na Memória:</span>
+          <span class="origin-title" id="pausadoRetained" style="margin: 4px 0;">0 páginas salvas · 0 recursos salvos (0 MB)</span>
+          <p class="limits-footnote">Fila suspensa aguardando ação do usuário.</p>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">ESTADO ATUAL DO RASTREAMENTO</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Páginas concluídas:</span>
+              <span class="metrics-val" id="pausadoPagesDone">1 página</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Recursos salvos:</span>
+              <span class="metrics-val" id="pausadoResSaved">0 arquivos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Páginas restantes:</span>
+              <span class="metrics-val" id="pausadoPagesRemaining">0 páginas na fila</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Tempo decorrido:</span>
+              <span class="metrics-val" id="pausadoElapsedTime">00:00 (pausado)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 4px; display: block;">O QUE FAZER AGORA</span>
+          <p class="limits-footnote" style="color: var(--text);">Retome o download para continuar a fila ou salve o pacote com os recursos capturados até agora.</p>
+        </div>
+      </section>
+
+      <!-- 6. PRONTO (ZIP) VIEW -->
+      <section class="view-state" id="view-pronto-zip" aria-label="Download finalizado">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot ok"></span>
+            <span>Download finalizado com sucesso!</span>
+          </div>
+          <span class="state-status-sub">Pacote ZIP pronto para navegação offline</span>
+        </div>
+
+        <div class="card origin-card">
+          <div class="origin-info">
+            <span class="origin-title" id="prontoZipFilename">site-completo.zip</span>
+            <span class="origin-url" id="prontoZipMeta">0 MB · 1 página · 0 recursos salvos</span>
+          </div>
+          <span class="security-badge">CONCLUÍDO</span>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">RESUMO DA CAPTURA (SALVOS E FALHAS)</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Páginas HTML:</span>
+              <span class="metrics-val" id="prontoZipPages">1 página salva (100%)</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Folhas de estilo CSS:</span>
+              <span class="metrics-val" id="prontoZipCss">0 arquivos salvos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Fontes tipográficas:</span>
+              <span class="metrics-val" id="prontoZipFonts">0 arquivos salvos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Imagens e vetores:</span>
+              <span class="metrics-val" id="prontoZipImages">0 arquivos salvos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Falha / CORS ausente:</span>
+              <span class="metrics-val" id="prontoZipCors">Nenhum</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Falha / Timeout HTTP:</span>
+              <span class="metrics-val" id="prontoZipTimeout">Nenhum</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Tempo total:</span>
+              <span class="metrics-val" id="prontoZipTime">0,0 segundos decorridos</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 4px; display: block;">DESTINO DO ARQUIVO</span>
+          <p class="limits-footnote" style="color: var(--text);">Salvo na pasta Downloads. Descompacte para navegar offline com o abrir.bat.</p>
+        </div>
+      </section>
+
+      <!-- 6b. PRONTO (HTML) VIEW -->
+      <section class="view-state" id="view-pronto-html" aria-label="HTML salvo">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot ok"></span>
+            <span>HTML salvo com sucesso!</span>
+          </div>
+          <span class="state-status-sub">Arquivo .html único salvo na pasta Downloads</span>
+        </div>
+
+        <div class="card origin-card">
+          <div class="origin-info">
+            <span class="origin-title" id="prontoHtmlFilename">pagina.html</span>
+            <span class="origin-url" id="prontoHtmlMeta">0 KB · 1 arquivo salvo · Sem dependências</span>
+          </div>
+          <span class="security-badge">CONCLUÍDO</span>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">RESUMO DA CAPTURA</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Documento principal:</span>
+              <span class="metrics-val" id="prontoHtmlDoc">1 arquivo .html higienizado</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Rastreadores removidos:</span>
+              <span class="metrics-val" id="prontoHtmlTrackers">0 scripts bloqueados</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Estilos e imagens:</span>
+              <span class="metrics-val">Ignorados (modo HTML puro)</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Tempo total:</span>
+              <span class="metrics-val" id="prontoHtmlTime">0,0 segundos</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 4px; display: block;">DESTINO DO ARQUIVO</span>
+          <p class="limits-footnote" style="color: var(--text);">Salvo na pasta Downloads padrão. Abra no navegador para visualizar.</p>
+        </div>
+      </section>
+
+      <!-- 7. ERRO VIEW -->
+      <section class="view-state" id="view-erro" aria-label="Página incompatível">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot err"></span>
+            <span style="color: var(--status-err);">Página de sistema incompatível</span>
+          </div>
+          <span class="state-status-sub">Navegadores bloqueiam extensões em abas internas</span>
+        </div>
+
+        <div class="card" style="border-color: var(--status-err);">
+          <span class="origin-title" style="color: var(--status-err); margin-bottom: 4px; display: block;">Restrição de Segurança do Navegador:</span>
+          <p class="limits-footnote">Navegadores Chrome e Edge impedem scripts em abas internas (chrome://, edge://, about:).</p>
+          <p class="limits-footnote" id="erroProtocol" style="margin-top: 4px; font-family: var(--font-mono); color: var(--accent);">Protocolo atual: chrome://extensions</p>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">O QUE FAZER AGORA</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">1. Alterne para aba comum:</span>
+              <span class="metrics-val" style="color: var(--accent);">Selecione site público</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">2. Detecção automática:</span>
+              <span class="metrics-val" style="color: var(--accent);">Pluck reativa na hora</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">3. Protocolos válidos:</span>
+              <span class="metrics-val">HTTP, HTTPS, file://</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">PÁGINAS SUPORTADAS PELO PLUCK</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Sites e Portais Web:</span>
+              <span class="metrics-val">HTTP / HTTPS</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Documentos HTML locais:</span>
+              <span class="metrics-val">file://</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. PERMISSÃO VIEW -->
+      <section class="view-state" id="view-permissao" aria-label="Permissão necessária">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot"></span>
+            <span>Permissão de rastreamento necessária</span>
+          </div>
+          <span class="state-status-sub">Autorização para capturar páginas vinculadas do domínio</span>
+        </div>
+
+        <div class="card origin-card">
+          <div class="origin-info">
+            <span class="origin-title" id="permDomain">localhost</span>
+            <p class="limits-footnote" style="margin-top: 4px;">Para rastrear e salvar páginas vinculadas sob este domínio, o navegador requer autorização explícita.</p>
+          </div>
+          <span class="security-badge" style="color: var(--accent);">MULTI-PÁGINA</span>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">O QUE A EXTENSÃO IRÁ ACESSAR</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Páginas internas:</span>
+              <span class="metrics-val" id="permScopeText">Rotas sob o domínio</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Recursos do site:</span>
+              <span class="metrics-val">CSS, fontes e imagens</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Dados privados:</span>
+              <span class="metrics-val">Zero senhas ou cookies</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 4px; display: block;">REVOGAÇÃO AUTOMÁTICA</span>
+          <p class="limits-footnote" style="color: var(--text);">A permissão é temporária e revogada assim que o download terminar ou o painel for fechado.</p>
+        </div>
+      </section>
+
+      <!-- 9. LOGIN VIEW -->
+      <section class="view-state" id="view-login" aria-label="Autenticação detectada">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot warn"></span>
+            <span style="color: var(--status-warn);">Página protegida por autenticação</span>
+          </div>
+          <span class="state-status-sub">Sessão ativa detectada neste domínio</span>
+        </div>
+
+        <div class="card" style="background: var(--warn-bg); border-color: var(--warn-border);">
+          <span class="origin-title" style="color: var(--status-warn); margin-bottom: 4px; display: block;">Área Restrita com Login Ativo:</span>
+          <p class="limits-footnote">O Pluck salvará o DOM visível renderizado na sessão ativa. Senhas, cookies e tokens NUNCA são gravados no arquivo.</p>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">PROTEÇÕES AUTOMÁTICAS DO PLUCK</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">Senhas e credenciais:</span>
+              <span class="metrics-val">Campos password descartados</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Tokens e cookies:</span>
+              <span class="metrics-val">Removidos de headers e scripts</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Campos ocultos:</span>
+              <span class="metrics-val">Higienizados na serialização</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="display: flex; gap: 10px; align-items: center;">
+          <input type="checkbox" id="consentCheck" checked style="accent-color: var(--accent); width: 16px; height: 16px;">
+          <label for="consentCheck" class="limits-footnote" style="color: var(--text); cursor: pointer;">Estou ciente e autorizo o salvamento do conteúdo visível desta sessão ativa.</label>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- FOOTER ACTIONS DOCK -->
+    <footer class="panel-footer" id="panelFooter">
+      <button type="button" class="btn-primary" id="btnMainAction">Baixar Página Completa (ZIP)</button>
+      <span class="footer-note" id="footerNote">Processamento 100% local no seu navegador</span>
     </footer>
+
   </div>
 
   <script type="module" src="./src/ui/sidepanel.ts"></script>

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createBaixandoRow, createConfigItem } from './ui-helpers';
-import { cleanupResources } from './window';
+import { cleanupResources } from './sidepanel';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -100,6 +100,10 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     cleanupResources();
 
     expect(typeof cleanupResources).toBe('function');
+    // [FIEL-05] Garante que a permissão debugger foi revogada
+    expect(removedOrigins).toEqual(
+      expect.arrayContaining([{ permissions: ['debugger'] }])
+    );
     URL.revokeObjectURL = originalRevoke;
   });
 

@@ -1,51 +1,15 @@
-// Pluck Service Worker (MV3)
+// Pluck Service Worker (MV3) - Exclusivo Painel Lateral Nativo (chrome.sidePanel)
 chrome.runtime.onInstalled.addListener(() => {
-  // Configura menu de contexto no ícone da extensão para abrir no painel lateral
-  if (chrome.contextMenus && typeof chrome.contextMenus.create === 'function') {
-    chrome.contextMenus.create({
-      id: 'open-sidepanel',
-      title: 'Abrir no painel lateral',
-      contexts: ['action']
-    });
-  }
-
-  // O clique no ícone NÃO abre o painel lateral automaticamente, pois a janela horizontal é o padrão
+  // Configura clique no ícone da extensão para abrir exclusivamente o painel lateral nativo
   if (chrome.sidePanel && typeof chrome.sidePanel.setPanelBehavior === 'function') {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((err) => {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
       console.warn('Erro ao configurar comportamento do sidePanel:', err);
     });
   }
 });
 
-// Clique no ícone da barra de ferramentas abre a janela própria (horizontal 720x400)
-chrome.action.onClicked.addListener(async () => {
-  try {
-    await chrome.windows.create({
-      url: chrome.runtime.getURL('window.html'),
-      type: 'popup',
-      width: 736,
-      height: 439
-    });
-  } catch (err) {
-    console.error('Erro ao abrir janela horizontal do Pluck:', err);
-  }
-});
-
-// Ação do menu de contexto: "Abrir no painel lateral"
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'open-sidepanel' && tab?.id) {
-    if (chrome.sidePanel && typeof chrome.sidePanel.open === 'function') {
-      try {
-        await chrome.sidePanel.open({ tabId: tab.id });
-      } catch (err) {
-        console.warn('Erro ao abrir painel lateral via menu:', err);
-      }
-    }
-  }
-});
-
-// Rastreamento de permissões temporárias ativas associadas a janelas e abas
-const activeHostPermissions = new Map<number, Set<string>>(); // windowId/tabId -> Set de origens
+// Rastreamento de permissões temporárias ativas associadas a abas
+const activeHostPermissions = new Map<number, Set<string>>(); // tabId -> Set de origens
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // [SEC-15] Validação de remetente (defesa em profundidade contra mensagens de origens espúrias)
@@ -54,7 +18,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message && message.type === 'PERMISSION_ACQUIRED') {
-    const key = message.windowId || _sender.tab?.windowId || _sender.tab?.id || 0;
+    const key = message.tabId || _sender.tab?.id || 0;
     if (key && message.origin) {
       if (!activeHostPermissions.has(key)) {
         activeHostPermissions.set(key, new Set());
@@ -66,7 +30,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message && message.type === 'PERMISSION_RELEASED') {
-    const key = message.windowId || _sender.tab?.windowId || _sender.tab?.id || 0;
+    const key = message.tabId || _sender.tab?.id || 0;
     if (key && message.origin) {
       activeHostPermissions.get(key)?.delete(message.origin);
     }
@@ -74,44 +38,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
-  if (message && message.type === 'OPEN_HORIZONTAL_WINDOW') {
-    chrome.windows.create({
-      url: chrome.runtime.getURL('window.html'),
-      type: 'popup',
-      width: 736,
-      height: 439
-    }).then((win) => {
-      sendResponse({ success: true, windowId: win.id });
-    }).catch((err) => {
-      sendResponse({ success: false, error: String(err) });
-    });
-    return true; // Keep message channel open for async response
-  }
-
   if (message && message.type === 'PING') {
     sendResponse({ status: 'PONG', timestamp: Date.now() });
     return false;
   }
 });
-
-// Revogação de permissão quando a janela popup é fechada pelo usuário (clique no "X")
-if (chrome.windows && chrome.windows.onRemoved) {
-  chrome.windows.onRemoved.addListener(async (windowId) => {
-    const origins = activeHostPermissions.get(windowId);
-    if (origins && origins.size > 0) {
-      for (const origin of origins) {
-        try {
-          if (chrome.permissions) {
-            await chrome.permissions.remove({ origins: [origin] });
-          }
-        } catch (err) {
-          console.warn('Erro ao revogar permissão ao fechar janela:', err);
-        }
-      }
-      activeHostPermissions.delete(windowId);
-    }
-  });
-}
 
 // Revogação de permissão quando uma aba associada ao painel lateral é fechada
 if (chrome.tabs && chrome.tabs.onRemoved) {
@@ -128,6 +59,14 @@ if (chrome.tabs && chrome.tabs.onRemoved) {
         }
       }
       activeHostPermissions.delete(tabId);
+    }
+    // [FIEL-05] Garante revogação formal de permissão debugger se associada à aba encerrada
+    try {
+      if (chrome.permissions && typeof chrome.permissions.remove === 'function') {
+        await chrome.permissions.remove({ permissions: ['debugger'] });
+      }
+    } catch (err) {
+      console.warn('Erro ao revogar permissão debugger:', err);
     }
   });
 }
