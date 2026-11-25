@@ -1,0 +1,86 @@
+:root {
+  /* Spacing Scale (Base 4px: 4 · 8 · 12 · 16 · 24 · 32 · 48) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Component Dimensions */
+  --header-height: 48px;
+  --footer-vertical-height: 64px;
+  --footer-horizontal-height: 64px;
+  --button-vertical-height: 44px;
+  --button-horizontal-height: 40px;
+  --card-mode-height: 84px;
+  --card-mode-compact-height: 76px;
+  --card-mode-horizontal-height: 56px;
+  --list-row-height: 40px;
+  --target-min: 32px;
+
+  /* Border Radii */
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  /* Typography */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Consolas", "JetBrains Mono", monospace;
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-standard: 200ms;
+  --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Colors - Dark Theme (Primary Brand Identity) */
+  --color-bg: #16181D;
+  --color-surface: #1D212A;
+  --color-surface-2: #262C38;
+  --color-border: #2B313D;
+  --color-border-subtle: #222731;
+  --color-divider: #262A33;
+  --color-text: #F4F1EA;
+  --color-text-muted: #8C93A0;
+  --color-accent: #FF6B3D;
+  --color-accent-hover: #E85C2F;
+  --color-accent-active: #D44F24;
+  --color-status-ok: #34D399;
+  --color-status-warn: #F59E0B;
+  --color-status-err: #EF4444;
+  --color-status-muted: #6B7280;
+  --color-status-warn-bg: #221C14;
+  --color-status-warn-border: #573B11;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #F4F1EA;
+    --color-surface: #FFFFFF;
+    --color-surface-2: #EBE6DC;
+    --color-border: #DCD7CC;
+    --color-border-subtle: #E8E3D9;
+    --color-divider: #E2DED4;
+    --color-text: #16181D;
+    --color-text-muted: #636A78;
+    --color-accent: #FF6B3D;
+    --color-accent-hover: #E85C2F;
+    --color-accent-active: #D44F24;
+    --color-status-ok: #0D8A56;
+    --color-status-warn: #B45309;
+    --color-status-err: #DC2626;
+    --color-status-muted: #8C93A0;
+    --color-status-warn-bg: #FFFBEB;
+    --color-status-warn-border: #FDE68A;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-standard: 0ms;
+  }
+}

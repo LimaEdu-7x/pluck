@@ -1,0 +1,28 @@
+{
+  "name": "pluck",
+  "version": "0.1.0",
+  "description": "Extrator web local e modular",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "node tests/run-edge-test.mjs"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.308",
+    "@types/node": "22.13.5",
+    "happy-dom": "21.0.4",
+    "playwright-core": "1.50.1",
+    "typescript": "5.7.3",
+    "vite": "6.4.6",
+    "vitest": "5.1.1"
+  }
+}

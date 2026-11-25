@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pluck — Painel Lateral</title>
+  <link rel="stylesheet" href="./src/ui/style.css">
+</head>
+<body>
+  <div class="vertical-window" id="verticalContainer" role="region" aria-label="Pluck Painel Lateral">
+    <header class="app-header">
+      <div class="brand">
+        <picture class="brand-picture">
+          <source srcset="/icons/pluck-symbol-dark.svg" media="(prefers-color-scheme: dark)">
+          <img src="/icons/pluck-symbol-color.svg" class="brand-logo" alt="Logotipo do Pluck">
+        </picture>
+        <span class="brand-title">Pluck</span>
+        <span class="brand-version">v0.1.0</span>
+      </div>
+      <div class="domain-pill" id="domainPill" role="status" aria-label="Origem da página ativa">
+        <span class="status-dot" id="domainDot"></span>
+        <span id="domainText">localhost</span>
+      </div>
+    </header>
+
+    <div class="vertical-body">
+      <!-- 1. State Início -->
+      <div class="ui-state active" id="stateInicio">
+        <div class="section-label">MODOS DE EXTRAÇÃO</div>
+        <div class="mode-card-list" id="modeCardList" role="radiogroup" aria-label="Modos de Extração">
+          <!-- Injected dynamically -->
+        </div>
+
+        <div class="section-label">INFORMAÇÕES DA ABA ATIVA</div>
+        <div class="data-row">
+          <span class="data-label">Título da página</span>
+          <span class="data-value" id="tabTitle">Aguardando...</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Endereço (URL)</span>
+          <span class="data-value" id="tabUrl" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">http://localhost</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Status da página</span>
+          <span class="data-value" id="tabStatus">Pronto</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Itens detectados</span>
+          <span class="data-value" id="tabItems">Analisando</span>
+        </div>
+
+        <div class="info-box">
+          <div class="info-box-title">Armazenamento local seguro</div>
+          <div class="info-box-desc">100% no seu navegador · sem telemetria nem envio de dados para servidores externos.</div>
+        </div>
+
+        <div style="margin-top: var(--space-3); text-align: center;">
+          <button type="button" id="openWindowBtn" class="btn-secondary" style="height: 32px; font-size: 11px;">
+            Abrir Janela Horizontal (720x400)
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. State Analisando -->
+      <div class="ui-state" id="stateAnalisando">
+        <div class="state-header" style="margin-top: var(--space-3);">
+          <div class="state-title">Varredura do DOM em andamento...</div>
+          <div class="state-subtitle" id="analisandoSubtitle">Analisando recursos da página...</div>
+        </div>
+        <div id="analisandoList">
+          <div class="data-row">
+            <span class="data-label">Documento HTML principal</span>
+            <span class="data-value">1 arquivo</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Folhas de estilo (CSS)</span>
+            <span class="data-value" id="cssCount">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Fontes tipográficas (WOFF2)</span>
+            <span class="data-value" id="fontCount">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Imagens e gráficos vetoriais</span>
+            <span class="data-value" id="imgCount">—</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Scripts dinâmicos</span>
+            <span class="data-value">Ignorados (segurança)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. State Baixando -->
+      <div class="ui-state" id="stateBaixando">
+        <div class="state-header" style="margin-top: var(--space-3);">
+          <div class="state-title" id="baixandoTitle">Empacotando e baixando arquivos...</div>
+          <div class="state-subtitle" id="baixandoSubtitle">Salvando no pacote sem congelar o navegador</div>
+        </div>
+        <div class="prog-card">
+          <div class="prog-header">
+            <span class="prog-percent" id="baixandoPercent">0%</span>
+            <span class="prog-count" id="baixandoCount">Iniciando download...</span>
+          </div>
+          <div class="prog-bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            <div class="prog-bar-fill" id="baixandoProgressFill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="baixando-list" id="baixandoList" style="margin-top: var(--space-3);">
+          <!-- Dynamic resource rows with status dot and status label -->
+        </div>
+
+        <div class="info-box" id="baixandoInfoBox" style="margin-top: var(--space-3);">
+          <div class="info-box-title" id="baixandoBoxTitle">Salvando arquivos na pasta Downloads</div>
+          <div class="info-box-desc" id="baixandoBoxDesc">Processamento 100% local direto no seu navegador.</div>
+        </div>
+
+        <div style="margin-top: var(--space-4);">
+          <button type="button" id="cancelDownloadBtn" class="btn-secondary" style="width: 100%; height: 44px;">
+            Cancelar download
+          </button>
+          <div class="footer-note" style="margin-top: 4px; text-align: center;">
+            A memória temporária será liberada
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. State Pronto -->
+      <div class="ui-state" id="statePronto">
+        <div class="state-header" style="margin-top: var(--space-3);">
+          <div class="state-title ok">Download concluído</div>
+          <div class="state-subtitle" id="prontoSubtitle">Todos os recursos foram processados e salvos localmente</div>
+        </div>
+        <div class="result-card">
+          <div class="result-card-header">
+            <span class="result-card-title" id="prontoFilename">pagina.html</span>
+            <span class="result-badge">CONCLUÍDO</span>
+          </div>
+          <div class="result-card-meta" id="prontoDetails">Processando...</div>
+        </div>
+
+        <div class="section-label" style="margin-top: var(--space-4);">RESUMO DA CAPTURA</div>
+        <div id="prontoSummaryRows">
+          <div class="data-row">
+            <span class="data-label">Arquivos salvos</span>
+            <span class="data-value" id="sumSavedFiles">1 arquivo</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Recursos externos ignorados</span>
+            <span class="data-value" id="sumIgnoredFiles">Nenhum</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Tempo total decorrido</span>
+            <span class="data-value" id="sumElapsedTime">0 s</span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">Destino de salvamento</span>
+            <span class="data-value">Pasta Downloads do sistema</span>
+          </div>
+        </div>
+
+        <!-- Notice Box Neutra (Modo HTML) -->
+        <div class="info-box" id="prontoNoticeBox" style="margin-top: var(--space-4);">
+          <div class="info-box-title">Arquivo HTML autônomo</div>
+          <div class="info-box-desc">Salvo sem folhas CSS ou imagens vinculadas. Ideal para visualização rápida e análise estrutural.</div>
+        </div>
+        <!-- Notice Box Alerta (ZIP Incompleto/CORS) -->
+        <div class="notice-box-warn" id="prontoWarnBox" style="display: none; margin-top: var(--space-4);">
+          <div class="info-box-title">Aviso: pacote incompleto</div>
+          <div class="info-box-desc" id="prontoWarnDesc">Alguns recursos externos foram ignorados por CORS ou limites de tamanho.</div>
+        </div>
+      </div>
+
+      <!-- 5. State Erro -->
+      <div class="ui-state" id="stateErro">
+        <div class="state-header" style="margin-top: var(--space-3);">
+          <div class="state-title err">Página de sistema incompatível</div>
+          <div class="state-subtitle">Restrição de segurança da plataforma do navegador</div>
+        </div>
+        <div class="info-box">
+          <div class="info-box-title">Restrição de Segurança do Navegador:</div>
+          <div class="info-box-desc">
+            O Pluck não tem autorização para atuar sobre abas internas protegidas (chrome://, edge://, about:). Mude para uma aba comum com endereço web regular (HTTP ou HTTPS) para realizar o arquivamento.
+          </div>
+        </div>
+        <div class="guide-list">
+          <div class="guide-item">
+            <span class="guide-num">1.</span>
+            <span>Navegue até qualquer página web pública (HTTP ou HTTPS).</span>
+          </div>
+          <div class="guide-item">
+            <span class="guide-num">2.</span>
+            <span>Para arquivos PDF, utilize o botão Salvar nativo do leitor.</span>
+          </div>
+          <div class="guide-item">
+            <span class="guide-num">3.</span>
+            <span>Reabra o painel do Pluck na aba desejada.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. State Permissão -->
+      <div class="ui-state" id="statePermissao">
+        <div class="state-header" style="margin-top: var(--space-3);">
+          <div class="state-title">Autorização de leitura necessária</div>
+          <div class="state-subtitle">O Pluck solicita permissão temporária para ler os estilos, imagens e fontes hospedados no domínio desta aba.</div>
+        </div>
+        <div class="info-box">
+          <div class="info-box-title">Compromisso de Privacidade Local:</div>
+          <div class="info-box-desc">
+            Nenhum arquivo ou dado é enviado para servidores externos. Todo o processo de inspeção e compactação ocorre de forma isolada na sua máquina.
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. State Login -->
+      <div class="ui-state" id="stateLogin">
+        <div class="state-header" style="margin-top: var(--space-3);">
+          <div class="state-title warn">Página com login detectada</div>
+          <div class="state-subtitle">Sessão autenticada ativa no navegador</div>
+        </div>
+        <div class="notice-box-warn">
+          <div class="info-box-title">Atenção ao conteúdo sob autenticação:</div>
+          <div class="info-box-desc">
+            Esta página requer credenciais de acesso. O Pluck capturará apenas os elementos visuais estáticos atualmente exibidos na tela. Senhas, cookies de sessão e tokens privados nunca são incluídos no pacote ZIP.
+          </div>
+        </div>
+        <label class="consent-row">
+          <input type="checkbox" id="loginConsentCheck">
+          <div>
+            <div class="consent-label">Compreendo e autorizo o salvamento desta página</div>
+            <div class="consent-sub">✓ Cookies e senhas são estritamente excluídos</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <footer class="vertical-footer">
+      <button class="btn-primary" id="mainActionBtn" aria-label="Executar ação principal">
+        Baixar somente o HTML
+      </button>
+      <div class="btn-subtext" id="actionSubtext">Processamento local direto no navegador</div>
+    </footer>
+  </div>
+
+  <script type="module" src="./src/ui/sidepanel.ts"></script>
+</body>
+</html>
