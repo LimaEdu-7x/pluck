@@ -25,6 +25,7 @@ export interface FaithfulCaptureOptions {
   mode?: 'page' | 'linked' | 'site';
   limits?: Partial<CrawlLimits>;
   autoscroll?: boolean;
+  recorder?: any;
   onProgress?: (loaded: number, total: number, currentItem?: string) => void;
 }
 

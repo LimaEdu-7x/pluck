@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createBaixandoRow, createConfigItem } from './ui-helpers';
-import { cleanupResources, isSystemBrowserPage } from './sidepanel';
+import { cleanupResources, isSystemBrowserPage, setState } from './sidepanel';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -142,5 +142,44 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
 
     expect(beforeunloadFired).toBe(true);
     expect(pagehideFired).toBe(true);
+  });
+
+  it('setState com erro customizado atualiza erroTitle e erroSub como texto puro sem innerHTML', () => {
+    // Monta estrutura DOM simulada da view-erro
+    document.body.innerHTML = `
+      <div id="sidePanelRoot">
+        <section class="view-state" id="view-erro">
+          <span id="erroTitle"></span>
+          <span id="erroSub"></span>
+          <p id="erroProtocol"></p>
+        </section>
+        <div id="panelFooter"></div>
+        <div id="domainPill"></div>
+        <div id="statusDot"></div>
+        <div id="domainText"></div>
+        <div id="securityBadge"></div>
+      </div>
+    `;
+
+    const maliciousError = '<script>window.hack=1</script><b>Erro Crítico</b>';
+    const maliciousDetail = '<img src=x onerror=alert(1)>Detalhe do Erro';
+
+    setState('erro', {
+      errorTitle: maliciousError,
+      errorDetail: maliciousDetail,
+      url: 'https://exemplo.com'
+    });
+
+    const titleEl = document.getElementById('erroTitle');
+    const subEl = document.getElementById('erroSub');
+
+    // Nenhuma tag injetada
+    expect(document.querySelector('script')).toBeNull();
+    expect(document.querySelector('b')).toBeNull();
+    expect(document.querySelector('img')).toBeNull();
+
+    // Texto preservado com segurança
+    expect(titleEl?.textContent).toBe(maliciousError);
+    expect(subEl?.textContent).toBe(maliciousDetail);
   });
 });

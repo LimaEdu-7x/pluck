@@ -42,79 +42,107 @@ COMO VISUALIZAR ESTE CLONE COM FIDELIDADE TOTAL:
 
 export function generateAbrirBat(): string {
   return `@echo off
-chcp 65001 >nul
-title Pluck - Servidor Local para Clone Fiel
-echo ===================================================
-echo Iniciando servidor local ultraleve e seguro do Pluck...
-echo Vinculado exclusivamente a 127.0.0.1 (porta dinamica).
-echo Pressione Ctrl+C para encerrar quando terminar.
-echo ===================================================
-echo.
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$tcpListener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), 0); ^
-   $tcpListener.Start(); ^
-   $port = $tcpListener.LocalEndpoint.Port; ^
-   $tcpListener.Stop(); ^
-   $dir = (Get-Location).Path; ^
-   $listener = New-Object System.Net.HttpListener; ^
-   $listener.Prefixes.Add(\\"http://127.0.0.1:$port/\\"); ^
-   $listener.Start(); ^
-   Write-Host \\"Servidor ativo em http://127.0.0.1:$port/\\" -ForegroundColor Green; ^
-   Start-Process \\"http://127.0.0.1:$port/index.html\\"; ^
-   $mimeTypes = @{ ^
-     '.html' = 'text/html; charset=utf-8'; ^
-     '.css'  = 'text/css; charset=utf-8'; ^
-     '.js'   = 'application/javascript; charset=utf-8'; ^
-     '.mjs'  = 'application/javascript; charset=utf-8'; ^
-     '.json' = 'application/json; charset=utf-8'; ^
-     '.png'  = 'image/png'; ^
-     '.jpg'  = 'image/jpeg'; ^
-     '.jpeg' = 'image/jpeg'; ^
-     '.webp' = 'image/webp'; ^
-     '.gif'  = 'image/gif'; ^
-     '.svg'  = 'image/svg+xml'; ^
-     '.woff' = 'font/woff'; ^
-     '.woff2'= 'font/woff2'; ^
-     '.ttf'  = 'font/ttf'; ^
-     '.wasm' = 'application/wasm'; ^
-     '.glb'  = 'model/gltf-binary'; ^
-     '.gltf' = 'model/gltf+json'; ^
-     '.riv'  = 'application/octet-stream'; ^
-     '.hdr'  = 'application/octet-stream'; ^
-     '.mp4'  = 'video/mp4'; ^
-     '.webm' = 'video/webm' ^
-   }; ^
-   while ($listener.IsListening) { ^
-     $ctx = $listener.GetContext(); ^
-     $req = $ctx.Request; ^
-     $res = $ctx.Response; ^
-     $path = $req.Url.LocalPath.TrimStart('/'); ^
-     if (-not $path -or $path -eq '/') { $path = 'index.html' } ^
-     $rawPath = [System.Uri]::UnescapeDataString($path); ^
-     $fullPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($dir, $rawPath)); ^
-     if (-not $fullPath.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)) { ^
-       $res.StatusCode = 403; ^
-       $forbidden = [System.Text.Encoding]::UTF8.GetBytes('403 Proibido: Acesso fora do diretorio do clone'); ^
-       $res.OutputStream.Write($forbidden, 0, $forbidden.Length); ^
-       $res.OutputStream.Close(); ^
-       continue; ^
-     } ^
-     if ([System.IO.File]::Exists($fullPath)) { ^
-       $ext = [System.IO.Path]::GetExtension($fullPath).ToLower(); ^
-       $res.ContentType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { 'application/octet-stream' }; ^
-       $res.StatusCode = 200; ^
-       $bytes = [System.IO.File]::ReadAllBytes($fullPath); ^
-       $res.ContentLength64 = $bytes.Length; ^
-       $res.OutputStream.Write($bytes, 0, $bytes.Length); ^
-     } else { ^
-       $res.StatusCode = 404; ^
-       $err = [System.Text.Encoding]::UTF8.GetBytes('404 Nao Encontrado'); ^
-       $res.OutputStream.Write($err, 0, $err.Length); ^
-     } ^
-     $res.OutputStream.Close(); ^
-   }"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0abrir.ps1"
 pause
+`;
+}
+
+export function generateAbrirPs1(): string {
+  return `# Servidor HTTP Local Ultraleve e Seguro do Pluck para Clone Fiel
+$baseDir = $PSScriptRoot
+if (-not $baseDir) {
+  $baseDir = (Get-Location).Path
+}
+$baseDir = [System.IO.Path]::GetFullPath($baseDir)
+
+# Porta dinamica livre vinculada estritamente a 127.0.0.1 (FIEL-01 / FIEL-07)
+$tcp = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), 0)
+$tcp.Start()
+$port = $tcp.LocalEndpoint.Port
+$tcp.Stop()
+
+$listener = New-Object System.Net.HttpListener
+$prefix = "http://127.0.0.1:$port/"
+$listener.Prefixes.Add($prefix)
+$listener.Start()
+
+Write-Host "===================================================" -ForegroundColor Cyan
+Write-Host "Pluck - Servidor Local para Clone Fiel" -ForegroundColor Cyan
+Write-Host "Servidor ativo em http://127.0.0.1:$port/" -ForegroundColor Green
+Write-Host "Vinculado exclusivamente a 127.0.0.1 (sem exposicao na rede)" -ForegroundColor Gray
+Write-Host "Diretorio: $baseDir" -ForegroundColor Gray
+Write-Host "Pressione Ctrl+C para encerrar quando terminar." -ForegroundColor Gray
+Write-Host "===================================================" -ForegroundColor Cyan
+
+Start-Process "http://127.0.0.1:$port/index.html"
+
+$mimeTypes = @{
+  '.html'  = 'text/html; charset=utf-8'
+  '.css'   = 'text/css; charset=utf-8'
+  '.js'    = 'application/javascript; charset=utf-8'
+  '.mjs'   = 'application/javascript; charset=utf-8'
+  '.json'  = 'application/json; charset=utf-8'
+  '.png'   = 'image/png'
+  '.jpg'   = 'image/jpeg'
+  '.jpeg'  = 'image/jpeg'
+  '.webp'  = 'image/webp'
+  '.gif'   = 'image/gif'
+  '.svg'   = 'image/svg+xml'
+  '.woff'  = 'font/woff'
+  '.woff2' = 'font/woff2'
+  '.ttf'   = 'font/ttf'
+  '.wasm'  = 'application/wasm'
+  '.glb'   = 'model/gltf-binary'
+  '.gltf'  = 'model/gltf+json'
+  '.riv'   = 'application/octet-stream'
+  '.hdr'   = 'application/octet-stream'
+  '.mp4'   = 'video/mp4'
+  '.webm'  = 'video/webm'
+}
+
+try {
+  while ($listener.IsListening) {
+    $ctx = $listener.GetContext()
+    $req = $ctx.Request
+    $res = $ctx.Response
+
+    # Sem CORS aberto (FIEL-01)
+    $rawPath = $req.Url.LocalPath.TrimStart('/')
+    if (-not $rawPath -or $rawPath -eq '/') {
+      $rawPath = 'index.html'
+    }
+    $decoded = [System.Uri]::UnescapeDataString($rawPath)
+    $targetPath = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($baseDir, $decoded))
+
+    # Prevenção rigorosa de Path Traversal (FIEL-01)
+    if (-not $targetPath.StartsWith($baseDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+      $res.StatusCode = 403
+      $msg = [System.Text.Encoding]::UTF8.GetBytes("403 Proibido: Acesso fora do diretorio do clone")
+      $res.OutputStream.Write($msg, 0, $msg.Length)
+      $res.OutputStream.Close()
+      continue
+    }
+
+    if ([System.IO.File]::Exists($targetPath)) {
+      $ext = [System.IO.Path]::GetExtension($targetPath).ToLower()
+      $res.ContentType = if ($mimeTypes.ContainsKey($ext)) { $mimeTypes[$ext] } else { 'application/octet-stream' }
+      $res.StatusCode = 200
+      $bytes = [System.IO.File]::ReadAllBytes($targetPath)
+      $res.ContentLength64 = $bytes.Length
+      $res.OutputStream.Write($bytes, 0, $bytes.Length)
+    } else {
+      $res.StatusCode = 404
+      $err = [System.Text.Encoding]::UTF8.GetBytes("404 Nao Encontrado")
+      $res.OutputStream.Write($err, 0, $err.Length)
+    }
+    $res.OutputStream.Close()
+  }
+} finally {
+  if ($listener -and $listener.IsListening) {
+    $listener.Stop()
+    $listener.Close()
+  }
+}
 `;
 }
 

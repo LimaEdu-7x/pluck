@@ -1,26 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { generateAbrirBat, generateAbrirSh, generateReadmeText } from './opener-scripts';
+import { generateAbrirBat, generateAbrirPs1, generateAbrirSh, generateReadmeText } from './opener-scripts';
 
 describe('Opener Scripts Security (FIEL-01 & FIEL-07)', () => {
-  it('abrir.bat não contém Access-Control-Allow-Origin: * (FIEL-01)', () => {
+  it('abrir.bat é limpo (3 linhas), sem carets ^, sem $ e chama abrir.ps1', () => {
     const bat = generateAbrirBat();
-    expect(bat).not.toContain("Access-Control-Allow-Origin', '*'");
-    expect(bat).not.toContain('Access-Control-Allow-Origin: *');
+    expect(bat).not.toContain('^');
+    expect(bat).not.toContain('$');
+    expect(bat).toContain('abrir.ps1');
+    expect(bat).toContain('@echo off');
+    expect(bat).toContain('powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0abrir.ps1"');
   });
 
-  it('abrir.bat valida caminho canônico com .StartsWith($dir) para prevenir Path Traversal (FIEL-01)', () => {
-    const bat = generateAbrirBat();
-    expect(bat).toContain('$fullPath.StartsWith($dir');
-    expect(bat).toContain('403');
+  it('abrir.ps1 não contém Access-Control-Allow-Origin: * (FIEL-01)', () => {
+    const ps1 = generateAbrirPs1();
+    expect(ps1).not.toContain("Access-Control-Allow-Origin', '*'");
+    expect(ps1).not.toContain('Access-Control-Allow-Origin: *');
   });
 
-  it('abrir.bat vincula-se exclusivamente a 127.0.0.1 e usa porta dinâmica livre (FIEL-01 & FIEL-07)', () => {
-    const bat = generateAbrirBat();
-    expect(bat).toContain('127.0.0.1');
-    expect(bat).toContain('TcpListener');
-    expect(bat).toContain('$tcpListener.LocalEndpoint.Port');
-    // Não pode estar travado na porta fixa 8080
-    expect(bat).not.toContain('$port = 8080;');
+  it('abrir.ps1 valida caminho canônico com .StartsWith($baseDir) para prevenir Path Traversal (FIEL-01)', () => {
+    const ps1 = generateAbrirPs1();
+    expect(ps1).toContain('$targetPath.StartsWith($baseDir');
+    expect(ps1).toContain('403');
+  });
+
+  it('abrir.ps1 vincula-se exclusivamente a 127.0.0.1 e usa porta dinâmica livre (FIEL-01 & FIEL-07)', () => {
+    const ps1 = generateAbrirPs1();
+    expect(ps1).toContain('127.0.0.1');
+    expect(ps1).toContain('TcpListener');
+    expect(ps1).toContain('$tcp.LocalEndpoint.Port');
+    expect(ps1).not.toContain('$port = 8080');
   });
 
   it('abrir.sh vincula-se a 127.0.0.1 e usa porta dinâmica (FIEL-01 & FIEL-07)', () => {

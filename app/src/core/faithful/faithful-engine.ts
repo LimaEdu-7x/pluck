@@ -11,9 +11,10 @@ import {
   rewriteJsContent
 } from './rewriter';
 import { createCrawlSession, extractCrawlLinks, enqueueDiscoveredLinks, recordDownloadedBytes } from './crawler';
-import { generateReadmeText, generateAbrirBat, generateAbrirSh } from './opener-scripts';
+import { generateReadmeText, generateAbrirBat, generateAbrirPs1, generateAbrirSh } from './opener-scripts';
 import { safePath } from '../security/safe-path';
 import { validateUrl, isLocalhostPage } from '../security/url-guard';
+import { isValidDocumentHtml } from '../capture/capture-engine';
 
 export async function captureFaithfulSite(
   options: FaithfulCaptureOptions
@@ -34,7 +35,9 @@ export async function captureFaithfulSite(
 
   try {
     // 1. Inicializa o Gravador CDP se houver tabId
-    if (tabId && typeof chrome !== 'undefined' && chrome.debugger) {
+    if (options.recorder) {
+      recorder = options.recorder;
+    } else if (tabId && typeof chrome !== 'undefined' && chrome.debugger) {
       recorder = new CdpNetworkRecorder(tabId);
       try {
         await recorder.start();
@@ -58,10 +61,12 @@ export async function captureFaithfulSite(
             args: [{ step: 400, intervalMs: 150 }]
           });
         } catch {
-          await performAutoscroll({ step: 400, intervalMs: 150 });
+          if (recorder) {
+            try {
+              await recorder.evaluate(`(${performAutoscroll.toString()})({ step: 400, intervalMs: 150 })`);
+            } catch {}
+          }
         }
-      } else {
-        await performAutoscroll({ step: 400, intervalMs: 150 });
       }
     }
 
@@ -76,13 +81,22 @@ export async function captureFaithfulSite(
         if (results && results[0]?.result) {
           mainHtml = results[0].result;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('executeScript falhou no faithful-engine:', err);
+      }
     }
-    if (!mainHtml && typeof document !== 'undefined') {
-      mainHtml = document.documentElement.outerHTML;
+
+    if (!mainHtml && recorder) {
+      try {
+        const cdpHtml = await recorder.evaluate('document.documentElement.outerHTML');
+        if (cdpHtml) mainHtml = cdpHtml;
+      } catch (err) {
+        console.warn('CDP evaluate falhou no faithful-engine:', err);
+      }
     }
-    if (!mainHtml) {
-      mainHtml = '<!DOCTYPE html><html><head><title>' + pageTitle + '</title></head><body></body></html>';
+
+    if (!isValidDocumentHtml(mainHtml)) {
+      throw new Error(`Falha crítica no Modo Fiel: DOM da página principal vazio ou inacessível (${pageUrl}).`);
     }
 
     // 4. Coleta recursos gravados pelo CDP
@@ -220,6 +234,7 @@ export async function captureFaithfulSite(
     // 9. Adiciona os scripts e instruções de abertura offline
     files['README.txt'] = new TextEncoder().encode(generateReadmeText(pageTitle, pageUrl));
     files['abrir.bat'] = new TextEncoder().encode(generateAbrirBat());
+    files['abrir.ps1'] = new TextEncoder().encode(generateAbrirPs1());
     files['abrir.sh'] = new TextEncoder().encode(generateAbrirSh());
 
     // 10. Gera o arquivo ZIP final

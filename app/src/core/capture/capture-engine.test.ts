@@ -4,13 +4,71 @@ import {
   capturePageHtml,
   capturePageZip,
   fetchResourceSafe,
+  isValidDocumentHtml,
   type PageRawData
 } from './capture-engine';
 
 describe('CaptureEngine', () => {
-  it('capturePageHtml sanitiza o HTML e devolve blob sem zip', () => {
+  describe('isValidDocumentHtml - Validação estrita de integridade do documento HTML', () => {
+    it('rejeita HTML nulo, indefinido, vazio ou apenas espaços', () => {
+      expect(isValidDocumentHtml(null)).toBe(false);
+      expect(isValidDocumentHtml(undefined)).toBe(false);
+      expect(isValidDocumentHtml('')).toBe(false);
+      expect(isValidDocumentHtml('   \n\t  ')).toBe(false);
+    });
+
+    it('rejeita HTMLs menores que 50 caracteres (truncados ou inválidos)', () => {
+      expect(isValidDocumentHtml('<html><body>Curto</body></html>')).toBe(false);
+      expect(isValidDocumentHtml('<div>Sem html</div>')).toBe(false);
+    });
+
+    it('rejeita documentos sem tag <html>', () => {
+      const fragment = '<div class="main"><p>Texto longo mas sem documento completo raiz</p></div>';
+      expect(isValidDocumentHtml(fragment)).toBe(false);
+    });
+
+    it('rejeita documentos sem <head> nem <body>', () => {
+      const invalid = '<html>'.padEnd(60, ' ') + '</html>';
+      expect(isValidDocumentHtml(invalid)).toBe(false);
+    });
+
+    it('aceita documento HTML válido com estrutura mínima completa', () => {
+      const valid = '<!DOCTYPE html><html><head><title>Teste</title></head><body><h1>Conteúdo</h1></body></html>';
+      expect(isValidDocumentHtml(valid)).toBe(true);
+    });
+  });
+
+  describe('Rejeição estrita de HTML vazio na captura (Bug 263 bytes)', () => {
+    it('capturePageHtml lança erro explícito se o HTML vier vazio ou inválido', async () => {
+      const emptyRaw: PageRawData = {
+        html: '',
+        title: 'Página Vazia',
+        url: 'http://localhost/empty',
+        baseURI: 'http://localhost/empty',
+        stylesheets: [],
+        images: []
+      };
+
+      await expect(capturePageHtml(emptyRaw)).rejects.toThrowError(/HTML da página vazio ou insuficiente/i);
+    });
+
+    it('capturePageZip rejeita e lança erro explícito se o HTML vier vazio ou inválido', async () => {
+      const emptyRaw: PageRawData = {
+        html: '   ',
+        title: 'Página Vazia',
+        url: 'http://localhost/empty',
+        baseURI: 'http://localhost/empty',
+        stylesheets: [],
+        images: []
+      };
+
+      await expect(capturePageZip(emptyRaw)).rejects.toThrowError(/HTML da página vazio ou insuficiente/i);
+    });
+  });
+
+  it('capturePageHtml sanitiza o HTML, remove scripts e injeta CSP offline autossuficiente', async () => {
     const raw: PageRawData = {
-      html: '<html><head><script>alert(1)</script></head><body><input type="password" value="123"><h1>Ola</h1></body></html>',
+      html: '<!DOCTYPE html><html><head><script>alert(1)</script></head><body><input type="password" value="123"><h1>Ola</h1></body></html>',
       title: 'Minha Pagina',
       url: 'http://localhost/teste',
       baseURI: 'http://localhost/teste',
@@ -18,13 +76,113 @@ describe('CaptureEngine', () => {
       images: []
     };
 
-    const result = capturePageHtml(raw);
+    const result = await capturePageHtml(raw);
     expect(result.filename).toBe('Minha Pagina.html');
     expect(result.mimeType).toBe('text/html');
     expect(result.sanitizedHtml).not.toContain('<script');
     expect(result.sanitizedHtml).not.toContain('type="password"');
     expect(result.sanitizedHtml).toContain("default-src 'none'");
+    expect(result.sanitizedHtml).toContain('img-src data:');
+    expect(result.sanitizedHtml).toContain('font-src data:');
+    expect(result.sanitizedHtml).toContain("style-src 'unsafe-inline'");
     expect(result.sanitizedHtml).toContain('<h1>Ola</h1>');
+  });
+
+  it('capturePageHtml embute CSS inline e converte imagens para data: URI', async () => {
+    const origFetch = global.fetch;
+    const samplePngB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const samplePngBytes = Buffer.from(samplePngB64, 'base64');
+
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('style.css')) {
+        return {
+          ok: true,
+          headers: new Headers({ 'content-type': 'text/css' }),
+          arrayBuffer: async () => new TextEncoder().encode('body { background: #16181D; color: red; }').buffer
+        };
+      }
+      if (url.includes('logo.png')) {
+        return {
+          ok: true,
+          headers: new Headers({ 'content-type': 'image/png' }),
+          arrayBuffer: async () => samplePngBytes.buffer
+        };
+      }
+      return { ok: false };
+    });
+
+    const raw: PageRawData = {
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Teste Autossuficiente</title>
+            <link rel="stylesheet" href="http://localhost/style.css">
+          </head>
+          <body>
+            <h1>Logo</h1>
+            <img src="http://localhost/logo.png" alt="Logo">
+          </body>
+        </html>
+      `,
+      title: 'Teste Autossuficiente',
+      url: 'http://localhost/pagina',
+      baseURI: 'http://localhost/pagina',
+      stylesheets: [],
+      images: []
+    };
+
+    const result = await capturePageHtml(raw);
+    expect(result.filename).toBe('Teste Autossuficiente.html');
+    expect(result.stats.inlinedStyles).toBe(1);
+    expect(result.stats.inlinedImages).toBe(1);
+    expect(result.sanitizedHtml).toContain('<style data-inlined-from="http://localhost/style.css">');
+    expect(result.sanitizedHtml).toContain('background: #16181D');
+    expect(result.sanitizedHtml).toContain('data:image/png;base64,');
+
+    global.fetch = origFetch;
+  });
+
+  it('capturePageHtml omite recursos acima de 2 MB e registra estatísticas de omitidos', async () => {
+    const origFetch = global.fetch;
+    // Buffer simulando arquivo grande de 2.5 MB (> 2 MB cap)
+    const bigBytes = new Uint8Array(2.5 * 1024 * 1024);
+
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('big-image.png')) {
+        return {
+          ok: true,
+          headers: new Headers({ 'content-type': 'image/png' }),
+          arrayBuffer: async () => bigBytes.buffer
+        };
+      }
+      return { ok: false };
+    });
+
+    const raw: PageRawData = {
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head><title>Teste Teto 2MB</title></head>
+          <body>
+            <img src="http://localhost/big-image.png" alt="Gigante">
+          </body>
+        </html>
+      `,
+      title: 'Teste Teto 2MB',
+      url: 'http://localhost/pagina',
+      baseURI: 'http://localhost/pagina',
+      stylesheets: [],
+      images: []
+    };
+
+    const result = await capturePageHtml(raw);
+    expect(result.stats.omittedAssets?.count).toBe(1);
+    expect(result.stats.omittedAssets?.reasons[0]).toContain('excedeu limite de 2 MB');
+    // Não incluiu a imagem de 2.5 MB
+    expect(result.sanitizedHtml).not.toContain(bigBytes);
+
+    global.fetch = origFetch;
   });
 
   it('fetchResourceSafe trata data: URLs em base64 com sucesso', async () => {

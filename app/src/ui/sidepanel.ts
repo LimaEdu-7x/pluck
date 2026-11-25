@@ -1,6 +1,8 @@
 import { validateUrl, isLocalhostPage } from '../core/security/url-guard';
 import { pageHtmlModule, imagesZipModule } from '../modules';
 import { captureFaithfulSite } from '../core/faithful/faithful-engine';
+import { isValidDocumentHtml } from '../core/capture/capture-engine';
+import { CdpNetworkRecorder } from '../core/faithful/cdp-recorder';
 
 export type UiScope = 'esta_pagina' | 'paginas_vinculadas' | 'site_inteiro';
 export type UiMode = 'zip' | 'html' | 'images';
@@ -363,11 +365,31 @@ function populateStateData(state: UiState, data?: any) {
       const pName = document.getElementById('prontoHtmlFilename');
       const pMeta = document.getElementById('prontoHtmlMeta');
       const pDoc = document.getElementById('prontoHtmlDoc');
+      const pStyles = document.getElementById('prontoHtmlStyles');
+      const pAssets = document.getElementById('prontoHtmlAssets');
+      const pOmitted = document.getElementById('prontoHtmlOmitted');
       const pTime = document.getElementById('prontoHtmlTime');
 
+      const omittedCount = data?.omittedAssets?.count || (data?.stats?.omittedAssets?.count || 0);
+      const stylesCount = data?.inlinedStyles || (data?.stats?.inlinedStyles || 0);
+      const imagesCount = data?.inlinedImages || (data?.stats?.inlinedImages || 0);
+      const fontsCount = data?.inlinedFonts || (data?.stats?.inlinedFonts || 0);
+      const totalEmbedded = imagesCount + fontsCount;
+
       if (pName) pName.textContent = data?.filename || 'pagina.html';
-      if (pMeta) pMeta.textContent = `${data?.sizeText || '480 KB'} · 1 arquivo salvo · Sem dependências`;
-      if (pDoc) pDoc.textContent = '1 arquivo .html higienizado';
+      if (pMeta) pMeta.textContent = `${data?.sizeText || '480 KB'} · Arquivo autossuficiente · ${totalEmbedded} recursos embutidos`;
+      if (pDoc) pDoc.textContent = '1 arquivo .html autossuficiente';
+      if (pStyles) pStyles.textContent = `${stylesCount} folha${stylesCount === 1 ? '' : 's'} de estilo inline`;
+      if (pAssets) pAssets.textContent = `${totalEmbedded} recursos (${imagesCount} imgs, ${fontsCount} fontes)`;
+      if (pOmitted) {
+        if (omittedCount > 0) {
+          pOmitted.textContent = `${omittedCount} recurso${omittedCount === 1 ? '' : 's'} (> 2 MB ou teto 25 MB)`;
+          pOmitted.className = 'metrics-val warn';
+        } else {
+          pOmitted.textContent = 'Nenhum';
+          pOmitted.className = 'metrics-val';
+        }
+      }
       if (pTime) pTime.textContent = `${data?.elapsedTime || '0,8'} segundos`;
     } else {
       const pName = document.getElementById('prontoZipFilename');
@@ -405,6 +427,13 @@ function populateStateData(state: UiState, data?: any) {
     const pScope = document.getElementById('permScopeText');
     if (pDom) pDom.textContent = currentTabOrigin ? new URL(currentTabOrigin).hostname : 'este domínio';
     if (pScope) pScope.textContent = `Rotas sob ${currentTabOrigin ? new URL(currentTabOrigin).hostname : 'o domínio'}`;
+  } else if (state === 'erro') {
+    const errTitle = document.getElementById('erroTitle');
+    const errSub = document.getElementById('erroSub');
+    const errProto = document.getElementById('erroProtocol');
+    if (errTitle) errTitle.textContent = data?.errorTitle || 'Página de sistema incompatível';
+    if (errSub) errSub.textContent = data?.errorDetail || 'Navegadores bloqueiam extensões em abas internas';
+    if (data?.url && errProto) errProto.textContent = `URL: ${data.url}`;
   }
 }
 
@@ -429,7 +458,7 @@ function renderFooterActions(_data?: any) {
     btn.onclick = () => handlePrimaryStart();
 
     if (currentScope === 'esta_pagina') {
-      if (currentMode === 'html') btn.textContent = 'Baixar somente o HTML';
+      if (currentMode === 'html') btn.textContent = 'Baixar HTML Autossuficiente';
       else if (currentMode === 'images') btn.textContent = 'Baixar somente imagens (ZIP)';
       else btn.textContent = 'Baixar Página Completa (ZIP)';
     } else if (currentScope === 'paginas_vinculadas') {
@@ -438,7 +467,11 @@ function renderFooterActions(_data?: any) {
       btn.textContent = 'Rastrear site inteiro';
     }
 
-    note.textContent = 'Processamento 100% local no seu navegador';
+    if (currentScope === 'esta_pagina' && currentMode === 'html') {
+      note.textContent = 'Arquivo único (.html) com estilos e imagens embutidos';
+    } else {
+      note.textContent = 'Processamento 100% local no seu navegador';
+    }
     footer.appendChild(btn);
     footer.appendChild(note);
   } else if (currentState === 'rolando') {
@@ -824,11 +857,34 @@ async function executeCaptureFlow() {
   isCapturePaused = false;
   isCaptureCancelled = false;
 
+  let activeRecorder: CdpNetworkRecorder | null = null;
+  if (currentMode === 'zip' && currentTabId && typeof chrome !== 'undefined' && chrome.debugger) {
+    try {
+      activeRecorder = new CdpNetworkRecorder(currentTabId);
+      await activeRecorder.start();
+
+      // Recarrega a aba sob o depurador CDP para registrar 100% dos recursos iniciais (WASM, 3D, Shaders, Webfonts)
+      setState('rolando', { currentY: 0, maxY: 1000, step: 0, imagesCount: 0 });
+      if (chrome.tabs && typeof chrome.tabs.reload === 'function') {
+        await new Promise<void>((resolve) => {
+          chrome.tabs.reload(currentTabId!, { bypassCache: true }, () => resolve());
+        });
+        await new Promise((r) => setTimeout(r, 3500));
+      }
+    } catch (e) {
+      console.warn('Não foi possível iniciar gravador CDP antes do autoscroll:', e);
+      activeRecorder = null;
+    }
+  }
+
   // 1. Fase de Rolagem (se habilitada)
   if (autoscrollOn && currentTabId) {
     setState('rolando', { currentY: 0, maxY: 1000, step: 0, imagesCount: 0 });
     await runRealAutoscrollInTab(currentTabId);
-    if (isCaptureCancelled) return;
+    if (isCaptureCancelled) {
+      if (activeRecorder) await activeRecorder.stop().catch(() => {});
+      return;
+    }
   }
 
   // 2. Fase de Captura e Download
@@ -837,7 +893,7 @@ async function executeCaptureFlow() {
     await new Promise((r) => setTimeout(r, 600));
   }
 
-  await performRealCapture();
+  await performRealCapture(activeRecorder);
 }
 
 // Execução de autoscroll no DOM da aba ativa com métricas reais
@@ -922,23 +978,27 @@ async function runRealAutoscrollInTab(tabId: number): Promise<void> {
       await new Promise((r) => setTimeout(r, intervalMs));
     }
 
-    // Retorna ao topo
+    // Retorna ao topo e aguarda estabilização do Hero
     await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
         try {
           window.scrollTo({ top: 0, behavior: 'instant' });
+          const win = window as any;
+          if (win.lenis && typeof win.lenis.scrollTo === 'function') {
+            try { win.lenis.scrollTo(0, { immediate: true }); } catch {}
+          }
         } catch {}
       }
     });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 1500));
   } catch (err) {
     console.warn('Erro ao executar autoscroll na aba:', err);
   }
 }
 
 // Execução real da captura com os motores correspondentes
-async function performRealCapture(): Promise<void> {
+async function performRealCapture(existingRecorder?: CdpNetworkRecorder | null): Promise<void> {
   const startTime = performance.now();
   setState('baixando', {
     pct: 0,
@@ -954,22 +1014,123 @@ async function performRealCapture(): Promise<void> {
   });
 
   try {
-    // 1. Obtenção do HTML bruto
-    let pageRawHtml = targetTabOverrideHtml || '<!DOCTYPE html><html><head><title>Pluck</title></head><body></body></html>';
-    if (typeof chrome !== 'undefined' && chrome.scripting && currentTabId && !targetTabOverrideHtml) {
+    // 1. Obtenção do HTML bruto diretamente da aba ativa
+    let pageRawHtml = targetTabOverrideHtml || '';
+    if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && currentTabId) {
       try {
         const [{ result: pageData }] = await chrome.scripting.executeScript({
           target: { tabId: currentTabId },
-          func: () => ({
-            html: document.documentElement.outerHTML,
-            title: document.title || 'Página'
-          })
+          func: (mode: string) => {
+            // Se for modo HTML autossuficiente (sem scripts), congela o estado visível e converte canvas
+            if (mode === 'html') {
+              try {
+                // 1. Revela elementos animados que GSAP/ScrollTrigger oculta ao rolar para o topo
+                const revealEls = document.querySelectorAll(
+                  '[data-reveal], [data-choreo], [data-draw-rule], [data-draw-tick], [data-draw-eyebrow], [data-reveal-group], [data-w-id], [class*="reveal"], [class*="choreo"]'
+                );
+                revealEls.forEach((el) => {
+                  const h = el as HTMLElement;
+                  if (h.style) {
+                    if (h.style.opacity === '0') h.style.opacity = '1';
+                    if (h.style.visibility === 'hidden') h.style.visibility = 'visible';
+                    if (h.style.filter && h.style.filter.includes('blur')) h.style.filter = 'none';
+                    if (h.style.transform && h.style.transform.includes('translate')) h.style.transform = 'none';
+                    if (h.style.transform && h.style.transform.includes('scale(0')) h.style.transform = 'scale(1, 1)';
+                  }
+                });
+
+                // 2. Converte canvas WebGL para imagem estática com toDataURL para preservar renderização 3D offline
+                const canvases = Array.from(document.querySelectorAll('canvas'));
+                const createdImgs: HTMLElement[] = [];
+                canvases.forEach((cv) => {
+                  try {
+                    if (cv.width > 20 && cv.height > 20) {
+                      const dataUrl = cv.toDataURL('image/png');
+                      if (dataUrl && dataUrl.length > 100) {
+                        const img = document.createElement('img');
+                        img.src = dataUrl;
+                        img.className = cv.className;
+                        img.setAttribute('data-pluck-canvas-img', 'true');
+                        img.setAttribute('style', cv.getAttribute('style') || '');
+                        img.setAttribute('width', String(cv.width || cv.clientWidth));
+                        img.setAttribute('height', String(cv.height || cv.clientHeight));
+                        try {
+                          const comp = window.getComputedStyle(cv);
+                          if (comp.position === 'absolute' || comp.position === 'fixed') {
+                            img.style.position = comp.position;
+                            img.style.top = comp.top;
+                            img.style.left = comp.left;
+                            img.style.right = comp.right;
+                            img.style.bottom = comp.bottom;
+                            img.style.zIndex = comp.zIndex;
+                            img.style.transform = comp.transform;
+                          }
+                          img.style.width = comp.width;
+                          img.style.height = comp.height;
+                          img.style.objectFit = 'contain';
+                        } catch {}
+                        cv.parentElement?.insertBefore(img, cv);
+                        cv.style.display = 'none';
+                        createdImgs.push(img);
+                      }
+                    }
+                  } catch {}
+                });
+
+                const html = document.documentElement.outerHTML;
+                const title = document.title || 'Página';
+
+                // Restaura o DOM original na aba ativa para não interferir na renderização viva
+                createdImgs.forEach((img) => img.remove());
+                canvases.forEach((cv) => { cv.style.display = ''; });
+
+                return { html, title };
+              } catch {}
+            }
+
+            return {
+              html: document.documentElement.outerHTML,
+              title: document.title || 'Página'
+            };
+          },
+          args: [currentMode]
         });
-        if (pageData) {
+        if (pageData && pageData.html) {
           pageRawHtml = pageData.html;
           currentTabTitle = pageData.title || currentTabTitle;
         }
-      } catch {}
+      } catch (scriptErr) {
+        console.warn('executeScript falhou ao ler DOM:', scriptErr);
+      }
+    }
+
+    // Se executeScript falhar e tivermos gravador ativo ou debugger, tenta via CDP
+    if (!pageRawHtml && existingRecorder) {
+      try {
+        const cdpHtml = await existingRecorder.evaluate('document.documentElement.outerHTML');
+        if (cdpHtml) pageRawHtml = cdpHtml;
+      } catch (cdpErr) {
+        console.warn('CDP recorder evaluate falhou:', cdpErr);
+      }
+    } else if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.debugger && currentTabId) {
+      try {
+        await chrome.debugger.attach({ tabId: currentTabId }, '1.3');
+        const evalRes: any = await chrome.debugger.sendCommand({ tabId: currentTabId }, 'Runtime.evaluate', {
+          expression: 'document.documentElement.outerHTML',
+          returnByValue: true
+        });
+        if (evalRes?.result?.value) {
+          pageRawHtml = evalRes.result.value;
+        }
+        await chrome.debugger.detach({ tabId: currentTabId });
+      } catch (cdpErr) {
+        console.warn('CDP evaluate fallback falhou:', cdpErr);
+      }
+    }
+
+    // Validação estrita: se o HTML estiver vazio, ERRA claramente e NÃO salva arquivo vazio
+    if (!isValidDocumentHtml(pageRawHtml)) {
+      throw new Error(`O documento HTML da página ativa está vazio ou inacessível (${currentTabUrl || 'sem URL'}).`);
     }
 
     // 2. Executa o módulo de acordo com o modo e escopo
@@ -985,7 +1146,7 @@ async function performRealCapture(): Promise<void> {
             pct,
             loaded,
             total,
-            currentItem: item || 'Salvando HTML...',
+            currentItem: item || 'Salvando HTML autossuficiente...',
             pagesDone: 1,
             pagesTotal: 1,
             mb: '0,1',
@@ -1001,7 +1162,12 @@ async function performRealCapture(): Promise<void> {
       setState('pronto', {
         filename: res.filename,
         sizeText,
-        elapsedTime: elapsed
+        elapsedTime: elapsed,
+        stats: (res as any).stats,
+        omittedAssets: (res as any).stats?.omittedAssets,
+        inlinedStyles: (res as any).stats?.inlinedStyles,
+        inlinedImages: (res as any).stats?.inlinedImages,
+        inlinedFonts: (res as any).stats?.inlinedFonts
       });
       return;
     }
@@ -1063,6 +1229,7 @@ async function performRealCapture(): Promise<void> {
         includeSubdomains
       },
       autoscroll: false, // autoscroll já foi executado na fase rolando
+      recorder: existingRecorder || undefined,
       onProgress: async (loaded, total, item) => {
         while (isCapturePaused && !isCaptureCancelled) {
           await new Promise((r) => setTimeout(r, 200));
@@ -1124,7 +1291,15 @@ async function performRealCapture(): Promise<void> {
     });
   } catch (err: any) {
     console.error('Erro na captura:', err);
-    setState('erro');
+    setState('erro', {
+      errorTitle: 'Falha na Captura do Documento',
+      errorDetail: err?.message || 'O documento HTML da página não pôde ser obtido ou está vazio.',
+      url: currentTabUrl
+    });
+  } finally {
+    if (existingRecorder) {
+      await existingRecorder.stop().catch(() => {});
+    }
   }
 }
 
@@ -1154,7 +1329,28 @@ async function finishWithPartialZip() {
 // --------------------------------------------------------------------------
 // DISPARO SEGURO DE DOWNLOAD NO NAVEGADOR
 // --------------------------------------------------------------------------
+let lastDownloadInfo: { filename: string; size: number; base64: string } | null = null;
+
 async function triggerBrowserDownload(blob: Blob, filename: string): Promise<void> {
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    const len = bytes.byteLength;
+    const CHUNK = 0x8000;
+    for (let i = 0; i < len; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    const b64 = btoa(binary);
+    lastDownloadInfo = {
+      filename,
+      size: blob.size,
+      base64: b64
+    };
+  } catch (err) {
+    console.warn('Erro ao salvar info de download para teste:', err);
+  }
+
   activeBlobUrl = URL.createObjectURL(blob);
   const blobUrl = activeBlobUrl;
 
@@ -1327,6 +1523,8 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
   try {
     const targetTab = tabOverride !== undefined ? tabOverride : (await getPanelActiveTab());
 
+    const isBusyState = currentState === 'baixando' || currentState === 'rolando' || currentState === 'analisando' || currentState === 'pronto';
+
     if (!targetTab) {
       currentTabId = null;
       currentTabUrl = '';
@@ -1336,7 +1534,9 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
       if (oTitle) oTitle.textContent = currentTabTitle;
       if (oUrl) oUrl.textContent = '—';
       updateSecurityPillForHiddenUrl();
-      setState('sem_acesso');
+      if (!isBusyState) {
+        setState('sem_acesso');
+      }
       return;
     }
 
@@ -1352,7 +1552,9 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
       if (oTitle) oTitle.textContent = currentTabTitle;
       if (oUrl) oUrl.textContent = 'URL oculta pelo navegador · Permissão necessária';
       updateSecurityPillForHiddenUrl();
-      setState('sem_acesso');
+      if (!isBusyState) {
+        setState('sem_acesso');
+      }
       return;
     }
 
@@ -1378,7 +1580,9 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
     // CENÁRIO 2: Página de sistema interna (chrome://, edge://, about:, devtools:)
     if (isSystemBrowserPage(currentTabUrl)) {
       updateSecurityPill(currentTabUrl);
-      setState('erro');
+      if (!isBusyState) {
+        setState('erro');
+      }
       return;
     }
 
@@ -1390,7 +1594,9 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
         setState('inicio');
       }
     } else {
-      setState('erro');
+      if (!isBusyState) {
+        setState('erro');
+      }
     }
   } catch (err) {
     console.warn('Erro ao atualizar aba ativa:', err);
@@ -1559,10 +1765,16 @@ if (typeof window !== 'undefined') {
     getSelectedMode: () => currentMode,
     getSelectedScope: () => currentScope,
     getLimits: () => ({ limitPages, limitMb, includeSubdomains }),
-    setTargetTab: ({ url, title, html }: { url?: string; title?: string; html?: string }) => {
+    getLastDownload: () => lastDownloadInfo,
+    clearLastDownload: () => { lastDownloadInfo = null; },
+    setLoginConsentAccepted: (v: boolean) => { loginConsentAccepted = v; },
+    performRealCapture: (recorder?: any) => performRealCapture(recorder),
+    handlePrimaryStart: () => handlePrimaryStart(),
+    setTargetTab: ({ url, title, html, tabId }: { url?: string; title?: string; html?: string; tabId?: number }) => {
+      if (tabId !== undefined) currentTabId = tabId;
       currentTabUrl = url || '';
       currentTabTitle = title || (url ? 'Página Web' : 'Aba ativa (identificação oculta)');
-      if (html) targetTabOverrideHtml = html;
+      targetTabOverrideHtml = html || '';
       try {
         currentTabOrigin = url ? new URL(url).origin : '';
       } catch {

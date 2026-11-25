@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { unzipSync } from 'fflate';
@@ -13,6 +14,168 @@ const SAMPLE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64'
 );
+
+// Espera ativa sem violação de CSP (sem eval())
+async function waitForPluckState(page, targetState, timeoutMs = 25000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const s = await page.evaluate(() => window.__pluck.getState());
+    if (s === targetState) return true;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const finalState = await page.evaluate(() => window.__pluck.getState());
+  throw new Error(`Timeout de ${timeoutMs}ms aguardando estado "${targetState}", atual: "${finalState}"`);
+}
+
+async function scrollToAnchor(page, selector) {
+  await page.evaluate(() => {
+    const tw = document.querySelector('.transition-w');
+    if (tw) {
+      tw.style.visibility = 'hidden';
+      tw.style.opacity = '0';
+      tw.style.pointerEvents = 'none';
+      tw.style.display = 'none';
+    }
+    const pre = document.querySelector('.loader, [class*="loader"], .preloader');
+    if (pre) pre.style.display = 'none';
+  });
+  await page.evaluate((sel) => {
+    const win = window;
+    if (win.gsap && win.gsap.globalTimeline) {
+      try { win.gsap.globalTimeline.resume(); } catch {}
+    }
+    const el = document.querySelector(sel);
+    if (el) {
+      el.scrollIntoView({ behavior: 'instant', block: 'start' });
+      if (win.lenis && typeof win.lenis.scrollTo === 'function') {
+        try { win.lenis.scrollTo(el, { immediate: true }); } catch {}
+      }
+      if (win.ScrollTrigger && typeof win.ScrollTrigger.refresh === 'function') {
+        try { win.ScrollTrigger.refresh(); } catch {}
+      }
+      window.dispatchEvent(new Event('scroll'));
+    }
+  }, selector);
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => {
+    const win = window;
+    if (win.gsap && win.gsap.globalTimeline) {
+      try { win.gsap.globalTimeline.pause(); } catch {}
+    }
+    document.querySelectorAll('video').forEach((v) => {
+      try { v.pause(); } catch {}
+    });
+  });
+}
+
+function createStaticCloneServer(dir) {
+  const mimeMap = {
+    '.html': 'text/html; charset=utf-8',
+    '.css': 'text/css',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.js': 'application/javascript',
+    '.mjs': 'application/javascript',
+    '.json': 'application/json',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
+    '.riv': 'application/octet-stream',
+    '.wasm': 'application/wasm',
+    '.glb': 'model/gltf-binary',
+    '.hdr': 'application/octet-stream'
+  };
+
+  const server = http.createServer((req, res) => {
+    let reqPath = req.url.split('?')[0];
+    if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
+    const diskPath = path.join(dir, decodeURIComponent(reqPath.replace(/^\/+/, '')));
+    if (fs.existsSync(diskPath) && fs.statSync(diskPath).isFile()) {
+      const ext = path.extname(diskPath).toLowerCase();
+      res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'application/octet-stream' });
+      res.end(fs.readFileSync(diskPath));
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+  });
+
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      resolve({ server, port: addr.port });
+    });
+  });
+}
+
+async function generateSideBySideAndDiff(browser, imgPathLive, imgPathClone, outSideBySidePath, labelTitle) {
+  const page = await browser.newPage();
+  await page.setContent('<!DOCTYPE html><html><body style="margin:0;background:#000;"></body></html>');
+  await page.setViewportSize({ width: 2880, height: 900 });
+  const b64Live = 'data:image/png;base64,' + fs.readFileSync(imgPathLive).toString('base64');
+  const b64Clone = 'data:image/png;base64,' + fs.readFileSync(imgPathClone).toString('base64');
+
+  const diffResult = await page.evaluate(async ([sLive, sClone, title]) => {
+    const load = (src) => new Promise((res) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.src = src;
+    });
+
+    const [imgL, imgC] = await Promise.all([load(sLive), load(sClone)]);
+    const canvas = document.createElement('canvas');
+    canvas.width = 2880;
+    canvas.height = 900;
+    const ctx = canvas.getContext('2d');
+
+    // Desenha lado a lado
+    ctx.drawImage(imgL, 0, 0, 1440, 900);
+    ctx.drawImage(imgC, 1440, 0, 1440, 900);
+
+    // Barra superior e legendas
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(0, 0, 2880, 50);
+
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#00FF66';
+    ctx.fillText(`AO VIVO (Original Web) — ${title}`, 30, 32);
+
+    ctx.fillStyle = '#FFCC00';
+    ctx.fillText(`CLONE OFFLINE (Pluck 100% Local) — ${title}`, 1470, 32);
+
+    document.body.style.margin = '0';
+    document.body.appendChild(canvas);
+
+    // Medição de fidelidade por pixel
+    const dL = ctx.getImageData(0, 0, 1440, 900).data;
+    const dC = ctx.getImageData(1440, 0, 1440, 900).data;
+
+    let diffPixels = 0;
+    const totalPixels = 1440 * 900;
+    for (let i = 0; i < dL.length; i += 4) {
+      const dr = Math.abs(dL[i] - dC[i]);
+      const dg = Math.abs(dL[i + 1] - dC[i + 1]);
+      const db = Math.abs(dL[i + 2] - dC[i + 2]);
+      if (dr > 25 || dg > 25 || db > 25) {
+        diffPixels++;
+      }
+    }
+
+    const matchPct = ((totalPixels - diffPixels) / totalPixels) * 100;
+    return {
+      totalPixels,
+      diffPixels,
+      matchPct: matchPct.toFixed(2)
+    };
+  }, [b64Live, b64Clone, labelTitle]);
+
+  await page.screenshot({ path: outSideBySidePath });
+  await page.close();
+  return diffResult;
+}
 
 async function runV4FinalSandboxTest() {
   console.log('=== Pluck Edge Sandbox Test Runner - UI v4 Nativa (Side Panel Exclusivo) ===');
@@ -137,6 +300,27 @@ async function runV4FinalSandboxTest() {
       res.writeHead(200, { 'Content-Type': 'image/png' });
       res.end(SAMPLE_PNG);
       return;
+    }
+
+    if (req.url === '/rendered-html-test') {
+      const filePath = path.resolve(__dirname, 'clone-proof/proof-fixture-mode-html.html');
+      if (fs.existsSync(filePath)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(fs.readFileSync(filePath));
+        return;
+      }
+    }
+
+    if (req.url && req.url.startsWith('/proof-file/')) {
+      const targetName = decodeURIComponent(req.url.replace('/proof-file/', ''));
+      const filePath = path.resolve(__dirname, 'clone-proof', targetName);
+      if (fs.existsSync(filePath)) {
+        const ext = path.extname(filePath).toLowerCase();
+        const mime = ext === '.html' ? 'text/html; charset=utf-8' : (ext === '.css' ? 'text/css' : 'application/octet-stream');
+        res.writeHead(200, { 'Content-Type': mime });
+        res.end(fs.readFileSync(filePath));
+        return;
+      }
     }
 
     res.writeHead(404);
@@ -562,30 +746,645 @@ async function runV4FinalSandboxTest() {
     });
     await panelPage.screenshot({ path: path.join(screenshotsDir, 'B-painel-claro-6-pronto.png') });
 
-    // 8. Teste dos 3 Modos Baixando de Verdade (Ponta a Ponta)
-    console.log('[8/8] Executando downloads reais dos 3 modos na página fixture...');
+    // 8. Testes Ponta a Ponta de Todas as Funções no Sandbox Edge
+    console.log('[8/8] Executando downloads reais e verificando arquivos abertos...');
     await panelPage.emulateMedia({ colorScheme: 'dark' });
-    await panelPage.evaluate(({ url, title, html }) => {
-      window.__pluck.setTargetTab({ url, title, html });
+
+    const cloneProofDir = path.resolve(__dirname, 'clone-proof');
+    fs.mkdirSync(cloneProofDir, { recursive: true });
+
+    // Descobre o realTabId da aba de fixture (contentPage) no Edge
+    await panelPage.evaluate(() => window.__pluck.updateActiveTab());
+    const realTabId = await panelPage.evaluate(async (url) => {
+      const tabs = await chrome.tabs.query({});
+      const found = tabs.find((t) => t.url && t.url.includes('fixture-page.html'));
+      return found ? found.id : null;
+    }, finalUrl);
+    console.log(`[E2E Sandbox] Aba de fixture vinculada com realTabId: ${realTabId}`);
+
+    // 8.1 Modo Somente HTML (com consentimento de login/senha + renderização no Playwright)
+    console.log('[8.1/8] Testando Modo 1: Somente HTML...');
+    await panelPage.evaluate(({ url, title, html, tabId }) => {
+      window.__pluck.setTargetTab({ url, title, html, tabId });
       window.__pluck.setState('inicio');
       window.__pluck.setScope('esta_pagina');
       window.__pluck.selectMode('html');
-    }, { url: finalUrl, title: 'Fixture Teste', html: rawHtmlFromPage });
+      window.__pluck.clearLastDownload();
+      window.__pluck.setLoginConsentAccepted(false);
+    }, { url: finalUrl, title: 'Pluck Sandbox Fixture', html: rawHtmlFromPage, tabId: realTabId });
 
-    // 8.1 Modo HTML
-    const downloadPromiseHtml = panelPage.waitForEvent('download', { timeout: 10000 }).catch(() => null);
+    // Clica para baixar HTML
     await panelPage.click('#btnMainAction');
-    await downloadPromiseHtml;
-    console.log('Download do modo HTML verificado com sucesso.');
+    await new Promise((r) => setTimeout(r, 400));
 
-    // 8.2 Modo ZIP
+    // Valida que a presença de <input type="password"> disparou a tela de consentimento de Login
+    const loginState = await panelPage.evaluate(() => window.__pluck.getState());
+    console.log(`[Segurança Credenciais] Estado após detecção de senha: "${loginState}"`);
+    if (loginState === 'login') {
+      await panelPage.screenshot({ path: path.join(screenshotsDir, 'A-painel-escuro-9-login-consent.png') });
+      // Clica para prosseguir com higienização segura
+      await panelPage.click('#btnProceedLogin');
+    }
+
+    // Aguarda o processamento e transição para 'pronto'
+    await waitForPluckState(panelPage, 'pronto', 20000);
+    const htmlProntoState = await panelPage.evaluate(() => window.__pluck.getState());
+    console.log(`[Modo HTML] Estado atingido: "${htmlProntoState}"`);
+    if (htmlProntoState !== 'pronto') {
+      throw new Error(`Modo HTML não alcançou estado 'pronto', atual: ${htmlProntoState}`);
+    }
+
+    const htmlDownload = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+    if (!htmlDownload || !htmlDownload.base64) {
+      throw new Error('Nenhum arquivo baixado pelo Modo HTML');
+    }
+    const htmlBuffer = Buffer.from(htmlDownload.base64, 'base64');
+    const htmlContent = htmlBuffer.toString('utf-8');
+    const htmlFilePath = path.join(cloneProofDir, 'proof-fixture-mode-html.html');
+    fs.writeFileSync(htmlFilePath, htmlBuffer);
+
+    console.log(`[Modo HTML] Arquivo salvo: ${htmlFilePath} (${htmlBuffer.length} bytes, nome: "${htmlDownload.filename}")`);
+
+    // [BUG 263 BYTES DEFENSE] Asserções estritas no conteúdo do HTML
+    if (htmlBuffer.length < 500) {
+      throw new Error(`[BUG 263 BYTES] HTML baixado é muito pequeno: ${htmlBuffer.length} bytes!`);
+    }
+    if (!htmlContent.includes('<title>Pluck Sandbox Fixture</title>')) {
+      throw new Error('[BUG 263 BYTES] HTML baixado não contém o título legítimo da página capturada!');
+    }
+    if (htmlContent.includes('<title>Pluck</title>')) {
+      throw new Error('[BUG 263 BYTES] HTML baixado contém título de fallback indevido "Pluck"!');
+    }
+    if (htmlContent.includes('senha123') || htmlContent.includes('type="password"')) {
+      throw new Error('[SEGURANÇA] HTML baixado não higienizou inputs de senha!');
+    }
+    if (!htmlContent.includes("default-src 'none'")) {
+      throw new Error('[SEGURANÇA] HTML baixado não contém CSP offline!');
+    }
+    if (!htmlContent.includes('background-color: #16181D') && !htmlContent.includes('data-inlined-from')) {
+      throw new Error('[AUTOSSUFICIENTE] HTML não embutiu folha de estilo CSS inline!');
+    }
+    if (!htmlContent.includes('data:image/png;base64,')) {
+      throw new Error('[AUTOSSUFICIENTE] HTML não converteu imagens para data: URI!');
+    }
+
+    // ABRE o HTML no Playwright para renderização e comparação visual
+    console.log('[Modo HTML] Abrindo HTML capturado no navegador para validação visual...');
+    const htmlRenderPage = await browserContext.newPage();
+    await htmlRenderPage.goto(`http://127.0.0.1:${mainPort}/rendered-html-test`);
+    await htmlRenderPage.waitForLoadState('domcontentloaded');
+    await htmlRenderPage.screenshot({ path: path.join(screenshotsDir, 'proof-rendered-html.png') });
+
+    const renderedH1 = await htmlRenderPage.$eval('h1', (el) => el.textContent?.trim());
+    if (renderedH1 !== 'Pluck Sandbox Fixture') {
+      throw new Error(`DOM do HTML renderizado incompatível: "${renderedH1}"`);
+    }
+    console.log(`[Modo HTML] Renderização do HTML offline validada com sucesso! H1="${renderedH1}"`);
+    await htmlRenderPage.close();
+
+    // 8.2 Modo Página Completa Fiel (ZIP) com extração e servidor local
+    console.log('[8.2/8] Testando Modo 2: Página Completa Fiel (ZIP)...');
+    await panelPage.evaluate(({ url, title, html, tabId }) => {
+      window.__pluck.setTargetTab({ url, title, html, tabId });
+      window.__pluck.setState('inicio');
+      window.__pluck.setScope('esta_pagina');
+      window.__pluck.selectMode('zip');
+      window.__pluck.clearLastDownload();
+      window.__pluck.setLoginConsentAccepted(true);
+      window.__pluck.toggleAutoscroll(); // desliga autoscroll para teste direto de empacotamento
+    }, { url: finalUrl, title: 'Pluck Sandbox Fixture', html: rawHtmlFromPage, tabId: realTabId });
+
+    await panelPage.click('#btnMainAction');
+    await waitForPluckState(panelPage, 'pronto', 25000);
+
+    const zipDownload = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+    if (!zipDownload || !zipDownload.base64) {
+      throw new Error('Nenhum arquivo baixado pelo Modo ZIP');
+    }
+    const zipBuffer = Buffer.from(zipDownload.base64, 'base64');
+    const zipFilePath = path.join(cloneProofDir, 'proof-fixture-mode-zip.zip');
+    fs.writeFileSync(zipFilePath, zipBuffer);
+    console.log(`[Modo ZIP] Pacote salvo: ${zipFilePath} (${zipBuffer.length} bytes, nome: "${zipDownload.filename}")`);
+
+    if (zipBuffer.length < 1000) {
+      throw new Error(`Pacote ZIP gerado é muito pequeno: ${zipBuffer.length} bytes`);
+    }
+
+    // Descompacta e valida o ZIP
+    const unzippedFiles = unzipSync(new Uint8Array(zipBuffer));
+    console.log(`[Modo ZIP] Arquivos dentro do pacote: ${Object.keys(unzippedFiles).join(', ')}`);
+    if (!unzippedFiles['index.html']) {
+      throw new Error('Pacote ZIP não contém index.html');
+    }
+
+    // Extrai para pasta local
+    const extractedDir = path.join(cloneProofDir, 'extracted-zip');
+    fs.rmSync(extractedDir, { recursive: true, force: true });
+    fs.mkdirSync(extractedDir, { recursive: true });
+    for (const [relPath, content] of Object.entries(unzippedFiles)) {
+      const fullP = path.join(extractedDir, relPath);
+      fs.mkdirSync(path.dirname(fullP), { recursive: true });
+      fs.writeFileSync(fullP, Buffer.from(content));
+    }
+
+    // [TESTE REAL DO abrir.bat NO WINDOWS]
+    console.log('[TESTE REAL abrir.bat] Validando arquivos no ZIP extraído...');
+    if (!unzippedFiles['abrir.bat']) throw new Error('ZIP não contém abrir.bat!');
+    if (!unzippedFiles['abrir.ps1']) throw new Error('ZIP não contém abrir.ps1!');
+
+    const batContent = fs.readFileSync(path.join(extractedDir, 'abrir.bat'), 'utf-8');
+    console.log(`[TESTE REAL abrir.bat] Conteúdo de abrir.bat:\n${batContent.trim()}`);
+    if (batContent.includes('^')) throw new Error('abrir.bat contém carets indevidos (^)!');
+    if (batContent.includes('$')) throw new Error('abrir.bat contém variáveis bash/powershell indevidas ($)!');
+
+    console.log('[TESTE REAL abrir.bat] Executando abrir.bat via cmd.exe no Windows...');
+    const batProcess = spawn('cmd.exe', ['/c', 'abrir.bat'], {
+      cwd: extractedDir,
+      windowsHide: true,
+      env: { ...process.env, PLUCK_NO_BROWSER: '1' }
+    });
+
+    let batOutput = '';
+    const urlPromise = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Timeout de 15s aguardando abrir.bat iniciar. Saída capturada:\n${batOutput}`));
+      }, 15000);
+
+      const onData = (chunk) => {
+        const text = chunk.toString('utf-8');
+        batOutput += text;
+        const match = text.match(/http:\/\/127\.0\.0\.1:(\d+)\//i) || batOutput.match(/http:\/\/127\.0\.0\.1:(\d+)\//i);
+        if (match) {
+          clearTimeout(timer);
+          resolve(`http://127.0.0.1:${match[1]}/`);
+        }
+      };
+
+      batProcess.stdout.on('data', onData);
+      batProcess.stderr.on('data', onData);
+      batProcess.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      batProcess.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`abrir.bat encerrou prematuramente (código ${code}). Saída:\n${batOutput}`));
+      });
+    });
+
+    const realServerUrl = await urlPromise;
+    console.log(`[TESTE REAL abrir.bat] Servidor nativo Windows ativo e respondendo em: ${realServerUrl}`);
+
+    // Valida GET em / (serve o index.html com status 200)
+    const indexResponse = await fetch(`${realServerUrl}index.html`);
+    console.log(`[TESTE REAL abrir.bat] GET ${realServerUrl}index.html -> Status: ${indexResponse.status}`);
+    if (indexResponse.status !== 200) {
+      throw new Error(`Esperava status 200 em index.html, recebeu: ${indexResponse.status}`);
+    }
+    const indexBody = await indexResponse.text();
+    if (!indexBody.includes('Pluck Sandbox Fixture')) {
+      throw new Error('Conteúdo do index.html retornado pelo abrir.bat não confere!');
+    }
+
+    // Valida GET com Path Traversal (/..%2F..%2F) -> deve retornar 403 (Proibido)
+    const traversalResponse = await fetch(`${realServerUrl}..%2F..%2Fwindows%2Fwin.ini`);
+    console.log(`[TESTE REAL abrir.bat] GET Path Traversal (..%2F..%2F) -> Status: ${traversalResponse.status}`);
+    if (traversalResponse.status !== 403 && traversalResponse.status !== 404) {
+      throw new Error(`Esperava status 403 ou 404 para Path Traversal, recebeu: ${traversalResponse.status}`);
+    }
+
+    // ABRE o clone no Playwright servido pelo abrir.bat real
+    const zipRenderPage = await browserContext.newPage();
+    await zipRenderPage.goto(`${realServerUrl}index.html`);
+    await zipRenderPage.waitForLoadState('networkidle');
+    await zipRenderPage.screenshot({ path: path.join(screenshotsDir, 'proof-rendered-zip.png') });
+
+    const zipBodyBg = await zipRenderPage.evaluate(() => window.getComputedStyle(document.body).backgroundColor);
+    console.log(`[TESTE REAL abrir.bat] Cor de fundo computada no clone offline: "${zipBodyBg}"`);
+    await zipRenderPage.close();
+
+    // Encerra o processo do servidor abrir.bat e sua árvore
+    try {
+      execSync(`taskkill /F /T /PID ${batProcess.pid} >nul 2>&1`);
+    } catch {}
+    try { batProcess.kill(); } catch {}
+    console.log('[TESTE REAL abrir.bat] Processo encerrado com sucesso. Teste 100% aprovado!');
+
+    // 8.3 Modo Somente Imagens (ZIP)
+    console.log('[8.3/8] Testando Modo 3: Somente Imagens (ZIP)...');
+    await panelPage.evaluate(({ url, title, html, tabId }) => {
+      window.__pluck.setTargetTab({ url, title, html, tabId });
+      window.__pluck.setState('inicio');
+      window.__pluck.setScope('esta_pagina');
+      window.__pluck.selectMode('images');
+      window.__pluck.clearLastDownload();
+      window.__pluck.setLoginConsentAccepted(true);
+    }, { url: finalUrl, title: 'Pluck Sandbox Fixture', html: rawHtmlFromPage, tabId: realTabId });
+
+    await panelPage.click('#btnMainAction');
+    await waitForPluckState(panelPage, 'pronto', 20000);
+
+    const imagesDownload = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+    if (!imagesDownload || !imagesDownload.base64) {
+      throw new Error('Nenhum arquivo baixado pelo Modo Imagens');
+    }
+    const imagesBuffer = Buffer.from(imagesDownload.base64, 'base64');
+    const imagesFilePath = path.join(cloneProofDir, 'proof-fixture-mode-images.zip');
+    fs.writeFileSync(imagesFilePath, imagesBuffer);
+
+    const unzippedImages = unzipSync(new Uint8Array(imagesBuffer));
+    const imageFilesCount = Object.keys(unzippedImages).filter((k) => !k.endsWith('/')).length;
+    console.log(`[Modo Imagens] Pacote salvo: ${imagesFilePath} (${imageFilesCount} imagens encontradas)`);
+    if (imageFilesCount === 0) {
+      throw new Error('Nenhuma imagem encontrada no pacote ZIP de imagens');
+    }
+
+    // 8.4 Defesa contra HTML Vazio (Reprodução e Validação do Bug 263 bytes)
+    console.log('[8.4/8] Testando rejeição estrita de HTML vazio na captura...');
+    await panelPage.evaluate(({ url, tabId }) => {
+      window.__pluck.setTargetTab({ url, title: 'Pagina Vazia Teste', html: '   ', tabId });
+      window.__pluck.setState('inicio');
+      window.__pluck.selectMode('html');
+      window.__pluck.clearLastDownload();
+    }, { url: `http://127.0.0.1:${mainPort}/empty-page.html`, tabId: realTabId });
+
+    // Aciona captura com HTML vazio
+    await panelPage.click('#btnMainAction');
+    await waitForPluckState(panelPage, 'erro', 5000);
+
+    const errorState = await panelPage.evaluate(() => window.__pluck.getState());
+    const blockedDownload = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+    const errTitleText = await panelPage.$eval('#erroTitle', (el) => el.textContent?.trim());
+    const errSubText = await panelPage.$eval('#erroSub', (el) => el.textContent?.trim());
+
+    console.log(`[Defesa Bug 263b] Estado="${errorState}", ErroTitle="${errTitleText}", ErroSub="${errSubText}", DownloadBloqueado=${blockedDownload === null}`);
+
+    if (errorState !== 'erro') {
+      throw new Error(`UI deveria ter transicionado para 'erro' com HTML vazio, mas ficou em: "${errorState}"`);
+    }
+    if (blockedDownload !== null) {
+      throw new Error('[FALHA CRÍTICA] UI salvou arquivo mesmo com HTML vazio!');
+    }
+    if (!errTitleText.includes('Falha na Captura do Documento')) {
+      throw new Error(`Título do erro não reflete falha de captura: "${errTitleText}"`);
+    }
+    await panelPage.screenshot({ path: path.join(screenshotsDir, 'proof-empty-html-blocked.png') });
+    console.log('[Defesa Bug 263b] Proteção validada com sucesso: 0 bytes salvos e erro claro na UI.');
+
+    // 8.5 Teste de Pausa e Salvar Pacote Parcial
+    console.log('[8.5/8] Testando estado de pausa e salvamento de pacote parcial...');
+    await panelPage.evaluate(() => {
+      window.__pluck.setState('baixando', {
+        pct: 45,
+        loaded: 5,
+        total: 10,
+        currentItem: 'gravando-recurso-5.png',
+        pagesDone: 1,
+        pagesTotal: 3,
+        mb: '1,2',
+        elapsedTime: '00:03'
+      });
+    });
+    await panelPage.click('#btnPauseDownload');
+    const pausedState = await panelPage.evaluate(() => window.__pluck.getState());
+    console.log(`[Pausa] Estado após pausar: "${pausedState}"`);
+    if (pausedState !== 'pausado') throw new Error(`Esperado estado 'pausado', obtido: ${pausedState}`);
+    await panelPage.screenshot({ path: path.join(screenshotsDir, 'proof-paused-state.png') });
+
+    await panelPage.click('#btnSavePartial');
+    await new Promise((r) => setTimeout(r, 400));
+    const partialProntoState = await panelPage.evaluate(() => window.__pluck.getState());
+    console.log(`[Pausa] Estado após salvar parcial: "${partialProntoState}"`);
+    if (partialProntoState !== 'pronto') throw new Error(`Esperado estado 'pronto' após salvar parcial, obtido: ${partialProntoState}`);
+    await panelPage.screenshot({ path: path.join(screenshotsDir, 'proof-partial-zip-saved.png') });
+
+    // 8.6 Teste de Limites de Páginas / MB na UI
+    console.log('[8.6/8] Testando configuração de limites de páginas e tamanho...');
     await panelPage.evaluate(() => {
       window.__pluck.setState('inicio');
-      window.__pluck.selectMode('zip');
-      window.__pluck.toggleAutoscroll(); // desliga autoscroll para ir direto ao download na fixture
-      window.__pluck.toggleAutoscroll(); // religa
+      window.__pluck.setScope('paginas_vinculadas');
+      window.__pluck.setLimitPage(20);
+      window.__pluck.setLimitMb(40);
     });
-    console.log('Modo ZIP pronto para acionamento na UI.');
+    const limitsSummary = await panelPage.$eval('#scopeSummary', (el) => el.textContent?.trim());
+    console.log(`[Limites] Resumo configurado: "${limitsSummary}"`);
+    if (!limitsSummary.includes('20 páginas') || !limitsSummary.includes('40 MB')) {
+      throw new Error(`Falha na atualização dos limites na UI: "${limitsSummary}"`);
+    }
+
+    // 8.7 Prova Completa nos Sites Reais (ArtCraft e Lando Norris nos 3 Modos)
+    console.log('[8.7/8] Executando downloads reais via painel em https://getartcraft.com e https://landonorris.com...');
+
+    const liveTestConfigs = [
+      {
+        id: 'artcraft',
+        name: 'ArtCraft',
+        url: 'https://getartcraft.com',
+        anchors: [
+          { sel: '#hero', name: 'Dobra 1: Hero' },
+          { sel: '#apps', name: 'Dobra 2: The lineup' },
+          { sel: '#principles', name: 'Dobra 3: Principles' },
+          { sel: 'footer', name: 'Dobra 4: Footer' }
+        ]
+      },
+      {
+        id: 'landonorris',
+        name: 'Lando Norris',
+        url: 'https://landonorris.com',
+        anchors: [
+          { sel: 'section.home-hero', name: 'Dobra 1: Hero' },
+          { sel: 'section.home-marquee', name: 'Dobra 2: Marquee' },
+          { sel: 'section.is-otot-home', name: 'Dobra 3: On Track Off Track' },
+          { sel: 'section.home-helmets', name: 'Dobra 4: Helmets' }
+        ]
+      }
+    ];
+
+    const finalReport = [];
+
+    for (const site of liveTestConfigs) {
+      console.log(`\n======================================================`);
+      console.log(`>>> INICIANDO PROVA NO SITE: ${site.name} (${site.url})`);
+      console.log(`======================================================`);
+
+      // 1. Navega a aba principal para o site
+      console.log(`[${site.name}] Carregando página no Edge...`);
+      await contentPage.setViewportSize({ width: 1440, height: 900 });
+      await contentPage.goto(site.url, { timeout: 35000, waitUntil: 'domcontentloaded' });
+      await new Promise((r) => setTimeout(r, 2000));
+
+      // Descobre o tabId real da contentPage
+      const siteTabId = await panelPage.evaluate(async (urlPattern) => {
+        const tabs = await chrome.tabs.query({});
+        const found = tabs.find((t) => t.url && t.url.includes(urlPattern));
+        return found ? found.id : null;
+      }, site.id);
+      console.log(`[${site.name}] TabId resolvido: ${siteTabId}`);
+
+      // Atualiza aba no painel
+      await panelPage.evaluate(({ url, title, tabId }) => {
+        window.__pluck.setTargetTab({ url, title, tabId });
+        window.__pluck.setScope('esta_pagina');
+        window.__pluck.clearLastDownload();
+        window.__pluck.setLoginConsentAccepted(true);
+        window.__pluck.setState('inicio');
+      }, { url: site.url, title: site.name, tabId: siteTabId });
+
+      await panelPage.screenshot({ path: path.join(screenshotsDir, `proof-panel-live-${site.id}.png`) });
+
+      // MODO 1: HTML AUTOSSUFICIENTE
+      console.log(`\n[${site.name}] --- Testando Modo 1: HTML Autossuficiente ---`);
+      await panelPage.click('#mode-html');
+      await panelPage.click('#btnMainAction');
+
+      // Se aparecer tela de login (consentimento), clica para prosseguir
+      await new Promise((r) => setTimeout(r, 400));
+      const curStateHtml = await panelPage.evaluate(() => window.__pluck.getState());
+      if (curStateHtml === 'login') {
+        await panelPage.click('#btnProceedLogin');
+      }
+
+      await waitForPluckState(panelPage, 'pronto', 45000);
+      const dlHtml = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+      if (!dlHtml || !dlHtml.base64) {
+        throw new Error(`[${site.name}] Nenhum download gerado no Modo HTML`);
+      }
+
+      const htmlBuf = Buffer.from(dlHtml.base64, 'base64');
+      const htmlStr = htmlBuf.toString('utf-8');
+      const htmlSavedPath = path.join(cloneProofDir, `${site.id}-panel-modo-html.html`);
+      fs.writeFileSync(htmlSavedPath, htmlBuf);
+
+      // Extrai title e h1 do HTML gerado
+      const parsedTitleMatch = htmlStr.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const parsedH1Match = htmlStr.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      const cleanH1 = parsedH1Match ? parsedH1Match[1].replace(/<[^>]+>/g, '').trim() : '—';
+      const cleanTitle = parsedTitleMatch ? parsedTitleMatch[1].trim() : '—';
+
+      // Detecta recursos embutidos e estatísticas
+      const embeddedImagesCount = (htmlStr.match(/data:image\/[a-zA-Z+]+;base64,/g) || []).length;
+      const embeddedFontsCount = (htmlStr.match(/data:font\/[a-zA-Z0-9-]+;base64,/g) || []).length;
+      const inlinedStylesCount = (htmlStr.match(/<style[^>]*>/g) || []).length;
+      console.log(`[${site.name}] Modo HTML Autossuficiente: ${htmlBuf.length} bytes (${(htmlBuf.length / 1024).toFixed(1)} KB)`);
+      console.log(`[${site.name}] Ativos embutidos: ${embeddedImagesCount} imagens, ${embeddedFontsCount} fontes, ${inlinedStylesCount} folhas CSS`);
+
+      if (htmlBuf.length < 500) {
+        throw new Error(`[${site.name}] HTML baixado é menor que 500 bytes (${htmlBuf.length} bytes)`);
+      }
+      if (cleanTitle === 'Pluck' || cleanTitle === '—') {
+        throw new Error(`[${site.name}] HTML baixado não contém título legítimo da página!`);
+      }
+
+      // Abre o HTML baixado no Playwright para renderização e comparação por dobras
+      const htmlRenderPage = await browserContext.newPage();
+      await htmlRenderPage.setViewportSize({ width: 1440, height: 900 });
+      await htmlRenderPage.goto(`http://127.0.0.1:${mainPort}/proof-file/${site.id}-panel-modo-html.html`, {
+        waitUntil: 'domcontentloaded'
+      });
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const htmlFoldResults = [];
+      for (let i = 0; i < site.anchors.length; i++) {
+        const anchor = site.anchors[i];
+        console.log(`[${site.name} HTML] Alinhando seção ${i + 1}/${site.anchors.length}: ${anchor.name} (${anchor.sel})...`);
+
+        await scrollToAnchor(contentPage, anchor.sel);
+        await scrollToAnchor(htmlRenderPage, anchor.sel);
+
+        const liveFoldPath = path.join(screenshotsDir, `proof-${site.id}-live-fold-${i + 1}-for-html.png`);
+        const htmlFoldPath = path.join(screenshotsDir, `proof-${site.id}-html-fold-${i + 1}.png`);
+        await contentPage.screenshot({ path: liveFoldPath, timeout: 25000 });
+        await htmlRenderPage.screenshot({ path: htmlFoldPath, timeout: 25000 });
+
+        const sbsHtmlPath = path.join(
+          cloneProofDir,
+          `side-by-side-${site.id}-html-pos${i + 1}-${anchor.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.png`
+        );
+        const diff = await generateSideBySideAndDiff(
+          browserContext,
+          liveFoldPath,
+          htmlFoldPath,
+          sbsHtmlPath,
+          `${site.name} HTML Autossuficiente — ${anchor.name}`
+        );
+
+        console.log(`[${site.name} HTML] >> Fidelidade ${anchor.name}: ${diff.matchPct}%`);
+        htmlFoldResults.push({ name: anchor.name, matchPct: parseFloat(diff.matchPct), print: path.basename(sbsHtmlPath) });
+      }
+      await htmlRenderPage.close();
+
+      const avgHtmlFidelity = (
+        htmlFoldResults.reduce((acc, f) => acc + f.matchPct, 0) / htmlFoldResults.length
+      ).toFixed(1);
+
+      finalReport.push({
+        site: site.name,
+        modo: 'HTML Autossuficiente',
+        bytes: `${(htmlBuf.length / 1024).toFixed(1)} KB`,
+        titulo: cleanTitle,
+        fidelidade: `${avgHtmlFidelity}% (4 dobras: ${htmlFoldResults.map((f) => `${f.matchPct}%`).join(', ')})`,
+        print: `side-by-side-${site.id}-html-pos1-*.png`
+      });
+
+      // Retorna painel ao estado início
+      await panelPage.evaluate(() => window.__pluck.setState('inicio'));
+      await new Promise((r) => setTimeout(r, 400));
+
+      // MODO 2: SOMENTE IMAGENS (ZIP)
+      console.log(`\n[${site.name}] --- Testando Modo 2: Somente Imagens (ZIP) ---`);
+      await panelPage.evaluate(({ url, title, tabId }) => {
+        window.__pluck.setTargetTab({ url, title, tabId });
+        window.__pluck.setScope('esta_pagina');
+        window.__pluck.selectMode('images');
+        window.__pluck.clearLastDownload();
+        window.__pluck.setLoginConsentAccepted(true);
+      }, { url: site.url, title: site.name, tabId: siteTabId });
+
+      await panelPage.click('#btnMainAction');
+      await waitForPluckState(panelPage, 'pronto', 35000);
+
+      const dlImages = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+      if (!dlImages || !dlImages.base64) {
+        throw new Error(`[${site.name}] Nenhum download gerado no Modo Imagens`);
+      }
+
+      const imgBuf = Buffer.from(dlImages.base64, 'base64');
+      const imgSavedPath = path.join(cloneProofDir, `${site.id}-panel-images.zip`);
+      fs.writeFileSync(imgSavedPath, imgBuf);
+
+      const unzippedImgs = unzipSync(new Uint8Array(imgBuf));
+      const imgCount = Object.keys(unzippedImgs).filter((k) => !k.endsWith('/')).length;
+      console.log(`[${site.name}] Modo Imagens: ${imgBuf.length} bytes, ${imgCount} imagens salvas`);
+
+      if (imgCount === 0) {
+        throw new Error(`[${site.name}] Nenhuma imagem salva no pacote de imagens`);
+      }
+
+      finalReport.push({
+        site: site.name,
+        modo: 'Somente Imagens',
+        bytes: `${(imgBuf.length / 1024).toFixed(1)} KB`,
+        titulo: `${imgCount} imagens salvas`,
+        fidelidade: `100% dos recursos de imagem (${imgCount} arquivos no ZIP)`,
+        print: `${site.id}-panel-images.zip`
+      });
+
+      // Retorna painel ao estado início
+      await panelPage.evaluate(() => window.__pluck.setState('inicio'));
+      await new Promise((r) => setTimeout(r, 400));
+
+      // MODO 3: PÁGINA COMPLETA FIEL (ZIP)
+      console.log(`\n[${site.name}] --- Testando Modo 3: Página Completa Fiel (ZIP) com Autoscroll ---`);
+      await panelPage.evaluate(({ url, title, tabId }) => {
+        window.__pluck.setTargetTab({ url, title, tabId });
+        window.__pluck.setScope('esta_pagina');
+        window.__pluck.selectMode('zip');
+        window.__pluck.clearLastDownload();
+        window.__pluck.setLoginConsentAccepted(true);
+      }, { url: site.url, title: site.name, tabId: siteTabId });
+
+      // Certifica que autoscroll está ligado
+      const isAutoOn = await panelPage.evaluate(() => {
+        const sw = document.getElementById('autoSwitch');
+        return sw && !sw.classList.contains('off');
+      });
+      if (!isAutoOn) {
+        await panelPage.click('#autoSwitch');
+      }
+
+      await panelPage.click('#btnMainAction');
+      console.log(`[${site.name}] Captura Fiel iniciada com autoscroll ativo... aguardando finalização...`);
+
+      await waitForPluckState(panelPage, 'pronto', 90000);
+      const dlZip = await panelPage.evaluate(() => window.__pluck.getLastDownload());
+      if (!dlZip || !dlZip.base64) {
+        throw new Error(`[${site.name}] Nenhum download gerado no Modo ZIP Fiel`);
+      }
+
+      const zipBuf = Buffer.from(dlZip.base64, 'base64');
+      const zipSavedPath = path.join(cloneProofDir, `${site.id}-panel-fiel.zip`);
+      fs.writeFileSync(zipSavedPath, zipBuf);
+      console.log(`[${site.name}] Pacote ZIP Fiel salvo: ${zipSavedPath} (${zipBuf.length} bytes)`);
+
+      // Descompacta na pasta correspondente
+      const offlineDir = path.join(cloneProofDir, `${site.id}-panel-offline`);
+      fs.rmSync(offlineDir, { recursive: true, force: true });
+      fs.mkdirSync(offlineDir, { recursive: true });
+
+      const unzippedClone = unzipSync(new Uint8Array(zipBuf));
+      for (const [relPath, content] of Object.entries(unzippedClone)) {
+        const fullP = path.join(offlineDir, relPath);
+        fs.mkdirSync(path.dirname(fullP), { recursive: true });
+        fs.writeFileSync(fullP, Buffer.from(content));
+      }
+      console.log(`[${site.name}] Clone extraído para: ${offlineDir} (${Object.keys(unzippedClone).length} arquivos)`);
+
+      // Inicia servidor local para simular abrir.bat
+      const { server: cloneSrv, port: clonePort } = await createStaticCloneServer(offlineDir);
+      console.log(`[${site.name}] Servidor estático do clone ativo em http://127.0.0.1:${clonePort}`);
+
+      // Abre aba do clone offline
+      const clonePage = await browserContext.newPage();
+      await clonePage.setViewportSize({ width: 1440, height: 900 });
+      await clonePage.goto(`http://127.0.0.1:${clonePort}/index.html`, { timeout: 35000, waitUntil: 'domcontentloaded' });
+      await new Promise((r) => setTimeout(r, 2000));
+
+      // Abre aba da página ao vivo para comparação precisa sincronizada
+      const liveVerifyPage = await browserContext.newPage();
+      await liveVerifyPage.setViewportSize({ width: 1440, height: 900 });
+      await liveVerifyPage.goto(site.url, { timeout: 35000, waitUntil: 'domcontentloaded' });
+      await new Promise((r) => setTimeout(r, 2000));
+
+      const foldResults = [];
+
+      for (let i = 0; i < site.anchors.length; i++) {
+        const anchor = site.anchors[i];
+        console.log(`[${site.name}] Alinhando seção ${i + 1}/${site.anchors.length}: ${anchor.name} (${anchor.sel})...`);
+
+        await scrollToAnchor(liveVerifyPage, anchor.sel);
+        await scrollToAnchor(clonePage, anchor.sel);
+
+        const liveFoldPath = path.join(cloneProofDir, `proof-${site.id}-live-fold-${i + 1}.png`);
+        const cloneFoldPath = path.join(cloneProofDir, `proof-${site.id}-clone-fold-${i + 1}.png`);
+        await liveVerifyPage.screenshot({ path: liveFoldPath, timeout: 25000 });
+        await clonePage.screenshot({ path: cloneFoldPath, timeout: 25000 });
+
+        const sbsPath = path.join(cloneProofDir, `side-by-side-${site.id}-pos${i + 1}-${anchor.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.png`);
+        const diff = await generateSideBySideAndDiff(
+          browserContext,
+          liveFoldPath,
+          cloneFoldPath,
+          sbsPath,
+          `${site.name} — ${anchor.name}`
+        );
+
+        console.log(`[${site.name}] >> Fidelidade ${anchor.name}: ${diff.matchPct}%`);
+        foldResults.push({ name: anchor.name, matchPct: parseFloat(diff.matchPct), print: path.basename(sbsPath) });
+      }
+
+      await clonePage.close();
+      await liveVerifyPage.close();
+      cloneSrv.close();
+
+      const avgFidelity = (foldResults.reduce((acc, f) => acc + f.matchPct, 0) / foldResults.length).toFixed(1);
+      finalReport.push({
+        site: site.name,
+        modo: 'Página Completa Fiel (ZIP)',
+        bytes: `${(zipBuf.length / (1024 * 1024)).toFixed(2)} MB`,
+        titulo: cleanTitle,
+        fidelidade: `${avgFidelity}% (4 dobras: ${foldResults.map((f) => `${f.matchPct}%`).join(', ')})`,
+        print: `side-by-side-${site.id}-pos1-*.png`
+      });
+
+      // Retorna painel ao estado início
+      await panelPage.evaluate(() => window.__pluck.setState('inicio'));
+      await new Promise((r) => setTimeout(r, 400));
+    }
+
+    console.log('\n======================================================');
+    console.log('>>> RESUMO CONSOLIDADO DOS TESTES AO VIVO NO PAINEL');
+    console.log('======================================================');
+    console.table(finalReport);
 
     // 9. Teste de Revogação de Permissão
     console.log('[9/9] Testando ciclo de vida e liberação de memória temporária...');

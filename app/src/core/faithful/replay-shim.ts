@@ -373,12 +373,8 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
     }
   }
 
-  // 11. Proteção contra overlays travados (.transition-w) e limpeza de canvas duplicado
+  // 11. Proteção contra overlays travados (.transition-w)
   window.addEventListener('DOMContentLoaded', () => {
-    const glWrap = document.querySelector('.gl-wrap');
-    if (glWrap && glWrap.children.length > 0) {
-      glWrap.innerHTML = '';
-    }
     setTimeout(() => {
       const tw = document.querySelector('.transition-w');
       if (tw && window.getComputedStyle(tw).visibility !== 'hidden') {
@@ -387,7 +383,7 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
         const btn = tw.querySelector('.transition-btn');
         if (btn) btn.style.display = 'none';
       }
-    }, 2000);
+    }, 1000);
   });
 })();`;
 }

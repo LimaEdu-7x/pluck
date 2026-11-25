@@ -34,10 +34,10 @@
     "debugger"
   ],
   "optional_permissions": [],
-  "host_permissions": [],
-  "optional_host_permissions": [
+  "host_permissions": [
     "*://*/*"
   ],
+  "optional_host_permissions": [],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none';"
   }

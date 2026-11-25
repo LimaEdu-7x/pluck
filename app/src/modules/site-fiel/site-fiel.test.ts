@@ -58,6 +58,7 @@ describe('Módulo Site Fiel: Análise e Execução', () => {
     expect(unzipped['index.html']).toBeDefined();
     expect(unzipped['README.txt']).toBeDefined();
     expect(unzipped['abrir.bat']).toBeDefined();
+    expect(unzipped['abrir.ps1']).toBeDefined();
     expect(unzipped['abrir.sh']).toBeDefined();
 
     const indexContent = new TextDecoder().decode(unzipped['index.html']);

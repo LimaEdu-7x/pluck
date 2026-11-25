@@ -4,8 +4,8 @@ import { pageHtmlModule } from './index';
 describe('page-html Module', () => {
   it('possui metadados corretos', () => {
     expect(pageHtmlModule.id).toBe('page-html');
-    expect(pageHtmlModule.badge).toBe('PADRÃO');
-    expect(pageHtmlModule.title).toBe('Somente HTML da página');
+    expect(pageHtmlModule.badge).toBe('ARQUIVO ÚNICO');
+    expect(pageHtmlModule.title).toBe('HTML autossuficiente');
   });
 
   it('analisa página e retorna contagem de 1 arquivo HTML', async () => {

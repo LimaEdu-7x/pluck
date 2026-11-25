@@ -67,11 +67,11 @@
           <div class="mode-header">
             <div class="mode-left">
               <span class="mode-radio"></span>
-              <span class="mode-title">Somente HTML da página</span>
+              <span class="mode-title">HTML autossuficiente</span>
             </div>
-            <span class="mode-badge">LEVE</span>
+            <span class="mode-badge">ARQUIVO ÚNICO</span>
           </div>
-          <p class="mode-desc">Apenas o arquivo .html limpo, sem imagens ou CSS.</p>
+          <p class="mode-desc">Arquivo único (.html) com estilos e imagens embutidos. Abre direto sem descompactar.</p>
         </div>
 
         <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="0">
@@ -388,15 +388,23 @@
           <div class="metrics-table">
             <div class="metrics-row">
               <span class="metrics-lbl">Documento principal:</span>
-              <span class="metrics-val" id="prontoHtmlDoc">1 arquivo .html higienizado</span>
+              <span class="metrics-val" id="prontoHtmlDoc">1 arquivo .html autossuficiente</span>
             </div>
             <div class="metrics-row">
-              <span class="metrics-lbl">Rastreadores removidos:</span>
-              <span class="metrics-val" id="prontoHtmlTrackers">0 scripts bloqueados</span>
+              <span class="metrics-lbl">Estilos embutidos:</span>
+              <span class="metrics-val" id="prontoHtmlStyles">0 folhas inline</span>
             </div>
             <div class="metrics-row">
-              <span class="metrics-lbl">Estilos e imagens:</span>
-              <span class="metrics-val">Ignorados (modo HTML puro)</span>
+              <span class="metrics-lbl">Imagens e fontes (data:):</span>
+              <span class="metrics-val" id="prontoHtmlAssets">0 recursos</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Recursos excedentes / omitidos:</span>
+              <span class="metrics-val" id="prontoHtmlOmitted">Nenhum</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">Rastreadores e scripts:</span>
+              <span class="metrics-val" id="prontoHtmlTrackers">Removidos (modo estático seguro)</span>
             </div>
             <div class="metrics-row">
               <span class="metrics-lbl">Tempo total:</span>
@@ -416,9 +424,9 @@
         <div class="state-header">
           <div class="state-status-title">
             <span class="status-dot err"></span>
-            <span style="color: var(--status-err);">Página de sistema incompatível</span>
+            <span id="erroTitle" style="color: var(--status-err);">Página de sistema incompatível</span>
           </div>
-          <span class="state-status-sub">Navegadores bloqueiam extensões em abas internas</span>
+          <span class="state-status-sub" id="erroSub">Navegadores bloqueiam extensões em abas internas</span>
         </div>
 
         <div class="card" style="border-color: var(--status-err);">

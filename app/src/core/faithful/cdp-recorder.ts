@@ -154,11 +154,30 @@ export class CdpNetworkRecorder {
     chrome.debugger.onEvent.addListener(this.onEventListener);
     chrome.debugger.onDetach.addListener(this.onDetachListener);
 
-    // Habilita o domínio Network no CDP
+    // Habilita o domínio Network e Page no CDP
     await chrome.debugger.sendCommand({ tabId: this.tabId }, 'Network.enable', {
       maxTotalBufferSize: 150 * 1024 * 1024,
       maxResourceBufferSize: 30 * 1024 * 1024
     });
+    try {
+      await chrome.debugger.sendCommand({ tabId: this.tabId }, 'Page.enable');
+    } catch {}
+  }
+
+  public async evaluate(expression: string): Promise<any> {
+    if (!this.attached || typeof chrome === 'undefined' || !chrome.debugger) {
+      return null;
+    }
+    try {
+      const res: any = await chrome.debugger.sendCommand({ tabId: this.tabId }, 'Runtime.evaluate', {
+        expression,
+        returnByValue: true
+      });
+      return res?.result?.value ?? null;
+    } catch (err) {
+      console.warn('CdpNetworkRecorder.evaluate falhou:', err);
+      return null;
+    }
   }
 
   public async collectResources(
@@ -173,6 +192,7 @@ export class CdpNetworkRecorder {
     );
 
     const results: CapturedResource[] = [];
+    const collectedUrls = new Set<string>();
     let counter = 0;
     let totalBytesSoFar = 0;
     const total = validRequests.length;
@@ -226,6 +246,7 @@ export class CdpNetworkRecorder {
             }
           }
 
+          collectedUrls.add(req.url);
           results.push({
             url: sanitizeUrlForStorage(req.url),
             mimeType: req.mimeType,
@@ -239,6 +260,56 @@ export class CdpNetworkRecorder {
       } catch {
         // Ignora recursos cujo corpo foi descartado pelo browser ou opaco
       }
+    }
+
+    // Coleta adicional de recursos já residentes na árvore da página (Page.getResourceTree)
+    try {
+      const treeRes: any = await chrome.debugger.sendCommand({ tabId: this.tabId }, 'Page.getResourceTree');
+      const processFrame = async (frameTree: any) => {
+        if (!frameTree) return;
+        const frameId = frameTree.frame?.id;
+        const resources = frameTree.resources || [];
+        for (const res of resources) {
+          if (!res.url || res.url.startsWith('data:') || collectedUrls.has(res.url)) continue;
+          if (isSensitiveResource(res.url, res.mimeType)) continue;
+          if (results.length >= MAX_CDP_RESOURCES || totalBytesSoFar >= MAX_CDP_BYTES) break;
+
+          try {
+            const contentRes: any = await chrome.debugger.sendCommand(
+              { tabId: this.tabId },
+              'Page.getResourceContent',
+              { frameId, url: res.url }
+            );
+            if (contentRes && contentRes.content !== undefined) {
+              let data: Uint8Array | string;
+              if (contentRes.base64Encoded) {
+                data = base64ToUint8(contentRes.content);
+              } else {
+                data = contentRes.content;
+              }
+              const itemSize = typeof data === 'string' ? data.length : data.byteLength;
+              totalBytesSoFar += itemSize;
+              collectedUrls.add(res.url);
+              results.push({
+                url: sanitizeUrlForStorage(res.url),
+                mimeType: res.mimeType || 'application/octet-stream',
+                statusCode: 200,
+                data,
+                isBase64: contentRes.base64Encoded,
+                size: itemSize
+              });
+            }
+          } catch {}
+        }
+        if (frameTree.childFrames) {
+          for (const child of frameTree.childFrames) {
+            await processFrame(child);
+          }
+        }
+      };
+      await processFrame(treeRes?.frameTree);
+    } catch {
+      // Page domain pode ser opcional em ambientes sem suporte
     }
 
     return results;
