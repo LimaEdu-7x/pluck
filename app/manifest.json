@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pluck",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Extrator e arquivador web 100% local e seguro.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -29,11 +29,10 @@
     "activeTab",
     "scripting",
     "sidePanel",
-    "downloads"
-  ],
-  "optional_permissions": [
+    "downloads",
     "debugger"
   ],
+  "optional_permissions": [],
   "host_permissions": [],
   "optional_host_permissions": [
     "*://*/*"

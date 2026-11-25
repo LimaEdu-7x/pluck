@@ -60,13 +60,5 @@ if (chrome.tabs && chrome.tabs.onRemoved) {
       }
       activeHostPermissions.delete(tabId);
     }
-    // [FIEL-05] Garante revogação formal de permissão debugger se associada à aba encerrada
-    try {
-      if (chrome.permissions && typeof chrome.permissions.remove === 'function') {
-        await chrome.permissions.remove({ permissions: ['debugger'] });
-      }
-    } catch (err) {
-      console.warn('Erro ao revogar permissão debugger:', err);
-    }
   });
 }

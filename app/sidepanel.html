@@ -19,11 +19,11 @@
           </svg>
         </div>
         <span class="brand-name">Pluck</span>
-        <span class="brand-tag">v0.2.0 · Painel Lateral</span>
+        <span class="brand-tag" id="brandTag">v0.2.0 · Painel Lateral</span>
       </div>
       <div class="domain-pill" id="headerDomainPill" role="status" aria-label="Domínio da página ativa">
         <span class="status-dot" id="domainDot"></span>
-        <span id="domainText">localhost</span>
+        <span id="domainText">Aguardando...</span>
       </div>
     </header>
 
@@ -35,10 +35,10 @@
         <!-- Origin Card -->
         <div class="card origin-card">
           <div class="origin-info">
-            <span class="origin-title" id="originTitle">Carregando aba...</span>
-            <span class="origin-url" id="originUrl">http://localhost</span>
+            <span class="origin-title" id="originTitle">Aguardando aba...</span>
+            <span class="origin-url" id="originUrl">—</span>
           </div>
-          <span class="security-badge" id="securityBadge">HTTPS (Seguro)</span>
+          <span class="security-badge" id="securityBadge">—</span>
         </div>
 
         <!-- Scope Tabs -->
@@ -424,7 +424,7 @@
         <div class="card" style="border-color: var(--status-err);">
           <span class="origin-title" style="color: var(--status-err); margin-bottom: 4px; display: block;">Restrição de Segurança do Navegador:</span>
           <p class="limits-footnote">Navegadores Chrome e Edge impedem scripts em abas internas (chrome://, edge://, about:).</p>
-          <p class="limits-footnote" id="erroProtocol" style="margin-top: 4px; font-family: var(--font-mono); color: var(--accent);">Protocolo atual: chrome://extensions</p>
+          <p class="limits-footnote" id="erroProtocol" style="margin-top: 4px; font-family: var(--font-mono); color: var(--accent);">Selecione uma aba com página web (HTTP/HTTPS)</p>
         </div>
 
         <div class="card">

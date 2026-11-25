@@ -26,8 +26,8 @@ let includeSubdomains = false;
 
 // Estado da aba e sessão
 let currentTabId: number | null = null;
-let currentTabUrl: string = 'http://localhost';
-let currentTabTitle: string = 'Página';
+let currentTabUrl: string = '';
+let currentTabTitle: string = 'Aguardando aba...';
 let currentTabOrigin: string = '';
 let targetTabOverrideHtml: string | null = null;
 let loginConsentAccepted = false;
@@ -49,25 +49,12 @@ let partialStatsRetained = {
 // --------------------------------------------------------------------------
 // LIMPEZA DE RECURSOS E MEMÓRIA
 // --------------------------------------------------------------------------
-export async function revokeDebuggerPermission(): Promise<void> {
-  if (typeof chrome !== 'undefined' && chrome.permissions && typeof chrome.permissions.remove === 'function') {
-    try {
-      await chrome.permissions.remove({ permissions: ['debugger'] });
-    } catch {}
-  }
-}
-
 export function cleanupResources() {
   if (activeBlobUrl) {
     try {
       URL.revokeObjectURL(activeBlobUrl);
     } catch {}
     activeBlobUrl = null;
-  }
-  if (typeof chrome !== 'undefined' && chrome.permissions && typeof chrome.permissions.remove === 'function') {
-    try {
-      chrome.permissions.remove({ permissions: ['debugger'] });
-    } catch {}
   }
   if (activeRequestedOrigin) {
     const origin = activeRequestedOrigin;
@@ -107,10 +94,21 @@ function updateSecurityPill(url: string) {
 
   if (!pill || !dot || !dText) return;
 
+  if (!url) {
+    pill.className = 'domain-pill muted';
+    dot.className = 'status-dot muted';
+    dText.textContent = '—';
+    if (badge) {
+      badge.className = 'security-badge muted';
+      badge.textContent = '—';
+    }
+    return;
+  }
+
   try {
     const parsed = new URL(url);
     const host = parsed.hostname;
-    dText.textContent = host || 'localhost';
+    dText.textContent = host || parsed.protocol.replace(':', '');
 
     if (url.startsWith('https://')) {
       pill.className = 'domain-pill';
@@ -142,9 +140,9 @@ function updateSecurityPill(url: string) {
       }
     }
   } catch {
-    dText.textContent = 'desconhecido';
+    dText.textContent = 'Incompatível';
     dot.className = 'status-dot muted';
-    if (badge) badge.textContent = 'Desconhecido';
+    if (badge) badge.textContent = 'Incompatível';
   }
 }
 
@@ -197,10 +195,23 @@ export function setState(state: UiState, data?: any) {
   const dText = document.getElementById('domainText');
   if (state === 'erro') {
     if (pill) pill.className = 'domain-pill error';
-    if (dText) dText.textContent = 'chrome://ext...';
+    if (dText) {
+      if (currentTabUrl) {
+        try {
+          const parsed = new URL(currentTabUrl);
+          dText.textContent = parsed.hostname || parsed.protocol.replace(':', '');
+        } catch {
+          dText.textContent = currentTabUrl.slice(0, 16);
+        }
+      } else {
+        dText.textContent = 'Incompatível';
+      }
+    }
     const errProto = document.getElementById('erroProtocol');
     if (errProto) {
-      errProto.textContent = `Protocolo atual: ${currentTabUrl.split('?')[0]}`;
+      errProto.textContent = currentTabUrl
+        ? `Protocolo atual: ${currentTabUrl.split('?')[0]}`
+        : 'Selecione uma aba com página web (HTTP/HTTPS)';
     }
   } else if (state === 'login') {
     if (pill) pill.className = 'domain-pill warn';
@@ -740,32 +751,10 @@ async function handlePrimaryStart() {
     } catch {}
   }
 
-  // [FIEL-05] Solicita permissão opcional de debugger sob gesto do usuário para Modo Fiel
-  if (currentMode === 'zip' && typeof chrome !== 'undefined' && chrome.permissions?.request) {
-    try {
-      const hasDebugger = await chrome.permissions.contains({ permissions: ['debugger'] });
-      if (!hasDebugger) {
-        await chrome.permissions.request({ permissions: ['debugger'] });
-      }
-    } catch {}
-  }
-
   executeCaptureFlow();
 }
 
-async function requestDebuggerIfNeeded(): Promise<void> {
-  if (currentMode === 'zip' && typeof chrome !== 'undefined' && chrome.permissions?.request) {
-    try {
-      const hasDebugger = await chrome.permissions.contains({ permissions: ['debugger'] });
-      if (!hasDebugger) {
-        await chrome.permissions.request({ permissions: ['debugger'] });
-      }
-    } catch {}
-  }
-}
-
 async function executeCaptureFlow() {
-  await requestDebuggerIfNeeded();
   skipAutoscrollRequested = false;
   isCapturePaused = false;
   isCaptureCancelled = false;
@@ -1071,8 +1060,6 @@ async function performRealCapture(): Promise<void> {
   } catch (err: any) {
     console.error('Erro na captura:', err);
     setState('erro');
-  } finally {
-    await revokeDebuggerPermission();
   }
 }
 
@@ -1084,7 +1071,6 @@ async function finishWithPartialZip() {
   const filename = `${currentTabTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_parcial.zip`;
 
   await triggerBrowserDownload(blob, filename);
-  await revokeDebuggerPermission();
 
   setState('pronto', {
     filename,
@@ -1212,50 +1198,95 @@ function formatTimer(totalSec: number): string {
 }
 
 // --------------------------------------------------------------------------
-// ATUALIZAÇÃO DA ABA ATIVA NO PAINEL
+// RESOLUÇÃO DA ABA ATIVA DA JANELA DO PAINEL (BUG 1)
 // --------------------------------------------------------------------------
-async function updateActiveTab() {
-  if (typeof chrome !== 'undefined' && chrome.tabs) {
-    try {
-      let targetTab: chrome.tabs.Tab | undefined;
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+export async function getPanelActiveTab(): Promise<chrome.tabs.Tab | null> {
+  if (typeof chrome === 'undefined' || !chrome.tabs) return null;
 
-      if (activeTab && activeTab.url && !activeTab.url.startsWith('chrome-extension://')) {
-        targetTab = activeTab;
-      } else {
-        const allTabs = await chrome.tabs.query({});
-        targetTab = allTabs.find((t) => t.url && (t.url.startsWith('http:') || t.url.startsWith('https:'))) || activeTab;
+  try {
+    // 1. Tenta obter o windowId da janela atual onde o painel lateral está acoplado
+    let windowId: number | undefined;
+    if (chrome.windows && typeof chrome.windows.getCurrent === 'function') {
+      try {
+        const currentWin = await chrome.windows.getCurrent();
+        if (currentWin && currentWin.id !== undefined && currentWin.id !== chrome.windows.WINDOW_ID_NONE) {
+          windowId = currentWin.id;
+        }
+      } catch {}
+    }
+
+    // 2. Se temos windowId da janela do painel, busca a aba ativa nessa janela
+    if (windowId !== undefined) {
+      const tabs = await chrome.tabs.query({ active: true, windowId });
+      const target = tabs.find((t) => t && t.url && !t.url.startsWith('chrome-extension://'));
+      if (target) return target;
+    }
+
+    // 3. Fallback: tabs.query { active: true, currentWindow: true }
+    const [currentWinTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (currentWinTab && currentWinTab.url && !currentWinTab.url.startsWith('chrome-extension://')) {
+      return currentWinTab;
+    }
+
+    // 4. Fallback: tabs.query { active: true, lastFocusedWindow: true }
+    const [lastFocusedTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (lastFocusedTab && lastFocusedTab.url && !lastFocusedTab.url.startsWith('chrome-extension://')) {
+      return lastFocusedTab;
+    }
+  } catch (err) {
+    console.warn('Erro ao resolver aba ativa do painel:', err);
+  }
+
+  return null;
+}
+
+export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
+  if (typeof chrome === 'undefined' || !chrome.tabs) return;
+
+  try {
+    const targetTab = tabOverride || (await getPanelActiveTab());
+
+    if (targetTab && targetTab.url) {
+      // Nunca usar a aba do próprio painel lateral
+      if (targetTab.url.startsWith('chrome-extension://')) {
+        return;
       }
 
-      if (targetTab && targetTab.url && !targetTab.url.startsWith('chrome-extension://')) {
-        currentTabId = targetTab.id ?? null;
-        currentTabUrl = targetTab.url;
-        currentTabTitle = targetTab.title || 'Página';
+      currentTabId = targetTab.id ?? null;
+      currentTabUrl = targetTab.url;
+      currentTabTitle = targetTab.title || 'Página';
 
-        try {
-          currentTabOrigin = new URL(currentTabUrl).origin;
-        } catch {
-          currentTabOrigin = '';
-        }
+      try {
+        currentTabOrigin = new URL(currentTabUrl).origin;
+      } catch {
+        currentTabOrigin = '';
+      }
 
-        const oTitle = document.getElementById('originTitle');
-        const oUrl = document.getElementById('originUrl');
-        if (oTitle) oTitle.textContent = currentTabTitle;
-        if (oUrl) oUrl.textContent = currentTabUrl;
+      const oTitle = document.getElementById('originTitle');
+      const oUrl = document.getElementById('originUrl');
+      if (oTitle) oTitle.textContent = currentTabTitle;
+      if (oUrl) oUrl.textContent = currentTabUrl;
 
-        updateSecurityPill(currentTabUrl);
+      updateSecurityPill(currentTabUrl);
 
-        if (!validateUrl(currentTabUrl, true).valid) {
-          setState('erro');
-        } else if (currentState === 'erro') {
-          setState('inicio');
-        }
-      } else {
+      if (!validateUrl(currentTabUrl, true).valid) {
         setState('erro');
+      } else if (currentState === 'erro') {
+        setState('inicio');
       }
-    } catch {
+    } else {
+      currentTabUrl = '';
+      currentTabTitle = 'Aguardando aba compatível';
+      const oTitle = document.getElementById('originTitle');
+      const oUrl = document.getElementById('originUrl');
+      if (oTitle) oTitle.textContent = currentTabTitle;
+      if (oUrl) oUrl.textContent = '—';
+      updateSecurityPill('');
       setState('erro');
     }
+  } catch (err) {
+    console.warn('Erro ao atualizar aba ativa:', err);
+    setState('erro');
   }
 }
 
@@ -1263,6 +1294,18 @@ async function updateActiveTab() {
 // INICIALIZAÇÃO DA INTERFACE
 // --------------------------------------------------------------------------
 export function initSidePanel() {
+  // [BUG 2] Fonte única de versão: lê manifest.json da extensão
+  const brandTag = document.getElementById('brandTag');
+  if (brandTag) {
+    let ver = '0.2.0';
+    if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
+      try {
+        ver = chrome.runtime.getManifest()?.version || ver;
+      } catch {}
+    }
+    brandTag.textContent = `v${ver} · Painel Lateral`;
+  }
+
   // Bind Scope Tabs
   const tEsta = document.getElementById('tab-esta');
   const tVinc = document.getElementById('tab-vinc');
@@ -1335,18 +1378,44 @@ export function initSidePanel() {
   renderChips('pags', [25, 50, 100], 50);
   renderChips('mb', [50, 100, 200], 100);
 
-  // Escuta troca de abas no navegador
+  // [BUG 1] Escuta reativa de eventos de abas e janelas
   if (typeof chrome !== 'undefined' && chrome.tabs) {
     if (chrome.tabs.onActivated) {
-      chrome.tabs.onActivated.addListener(() => updateActiveTab());
-    }
-    if (chrome.tabs.onUpdated) {
-      chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-        if (changeInfo.status === 'complete' || changeInfo.url) {
+      chrome.tabs.onActivated.addListener(async (activeInfo) => {
+        try {
+          const tab = await chrome.tabs.get(activeInfo.tabId);
+          updateActiveTab(tab);
+        } catch {
           updateActiveTab();
         }
       });
     }
+    if (chrome.tabs.onUpdated) {
+      chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+        if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
+          if (tab && tab.active) {
+            updateActiveTab(tab);
+          } else {
+            updateActiveTab();
+          }
+        }
+      });
+    }
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.windows && chrome.windows.onFocusChanged) {
+    chrome.windows.onFocusChanged.addListener((winId) => {
+      if (winId !== chrome.windows.WINDOW_ID_NONE) {
+        updateActiveTab();
+      }
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => updateActiveTab());
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) updateActiveTab();
+    });
   }
 
   // Inicializa estado padrão: escopo esta_pagina, modo zip (PADRÃO)
@@ -1374,6 +1443,8 @@ if (typeof window !== 'undefined') {
     setLimitPage,
     setLimitMb,
     toggleAutoscroll,
+    updateActiveTab,
+    getPanelActiveTab,
     getState: () => currentState,
     getSelectedModule: () => currentMode === 'zip' ? 'page-zip' : (currentMode === 'html' ? 'page-html' : 'images-zip'),
     getSelectedMode: () => currentMode,

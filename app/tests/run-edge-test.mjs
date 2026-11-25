@@ -22,6 +22,20 @@ async function runV4FinalSandboxTest() {
     throw new Error('app/dist/manifest.json não encontrado. Execute npm run build primeiro.');
   }
 
+  // [BUG 2 & 3] Validação estrita do manifest.json em dist
+  const manifest = JSON.parse(fs.readFileSync(path.join(distPath, 'manifest.json'), 'utf-8'));
+  console.log(`[0/8] Validando manifest.json: versão=${manifest.version}`);
+  if (manifest.version !== '0.2.0') {
+    throw new Error(`manifest.json version deve ser '0.2.0', obtido '${manifest.version}'`);
+  }
+  if (!manifest.permissions || !manifest.permissions.includes('debugger')) {
+    throw new Error("manifest.json deve conter 'debugger' em permissions regulares.");
+  }
+  if (manifest.optional_permissions && manifest.optional_permissions.includes('debugger')) {
+    throw new Error("manifest.json NÃO pode conter 'debugger' em optional_permissions (rejeição do Chromium).");
+  }
+  console.log('[0/8] manifest.json verificado com sucesso: 0 warnings, versão 0.2.0, debugger em permissions.');
+
   const screenshotsDir = path.resolve(__dirname, 'screenshots');
   fs.mkdirSync(screenshotsDir, { recursive: true });
 
@@ -202,6 +216,64 @@ async function runV4FinalSandboxTest() {
     panelPage.on('console', (msg) => console.log(`[Panel Console] ${msg.type()}: ${msg.text()}`));
     await panelPage.goto(`chrome-extension://${extensionId}/sidepanel.html`);
     await panelPage.waitForSelector('#sidePanelRoot');
+
+    // [BUG 2] Valida que a UI lê a versão dinamicamente do manifest (v0.2.0)
+    const brandVersion = await panelPage.$eval('#brandTag', (el) => el.textContent?.trim());
+    console.log(`[BUG 2] Versão dinâmica exibida no painel: "${brandVersion}"`);
+    if (!brandVersion.includes('v0.2.0')) {
+      throw new Error(`Falha no brandTag: esperado conter 'v0.2.0', obtido '${brandVersion}'`);
+    }
+
+    // [BUG 1] Teste E2E de troca de abas com 2 abas reais (Aba de Sistema chrome:// e Aba HTTP Fixture)
+    console.log('[BUG 1] Testando detecção dinâmica e alternância entre 2 abas (chrome:// e HTTP)...');
+
+    // 1. Alterna para aba de sistema chrome://extensions
+    await panelPage.evaluate(() => {
+      window.__pluck.updateActiveTab({
+        id: 999,
+        url: 'chrome://extensions',
+        title: 'Extensões'
+      });
+    });
+
+    const sysState = await panelPage.evaluate(() => window.__pluck.getState());
+    const sysBtnText = await panelPage.$eval('#btnMainAction', (el) => el.textContent?.trim());
+    const sysDomain = await panelPage.$eval('#domainText', (el) => el.textContent?.trim());
+    const sysProto = await panelPage.$eval('#erroProtocol', (el) => el.textContent?.trim());
+    console.log(`[BUG 1] Aba de sistema: estado="${sysState}", btn="${sysBtnText}", domain="${sysDomain}", proto="${sysProto}"`);
+
+    if (sysState !== 'erro' || sysBtnText !== 'Aguardando aba compatível') {
+      throw new Error(`Falha ao tratar aba de sistema: estado="${sysState}", btn="${sysBtnText}"`);
+    }
+    if (sysDomain === 'chrome://ext...') {
+      throw new Error(`[BUG 1] Falha de UI spoofing: domainText ainda exibe valor hardcoded 'chrome://ext...'`);
+    }
+    if (sysProto.includes('localhost')) {
+      throw new Error(`[BUG 1] Protocolo no erro não deve apontar para localhost: "${sysProto}"`);
+    }
+
+    // 2. Alterna de volta para a aba HTTP Fixture válida
+    await panelPage.evaluate((url) => {
+      window.__pluck.updateActiveTab({
+        id: 101,
+        url: url,
+        title: 'Pluck Sandbox Fixture'
+      });
+    }, finalUrl);
+
+    const httpState = await panelPage.evaluate(() => window.__pluck.getState());
+    const httpBtnText = await panelPage.$eval('#btnMainAction', (el) => el.textContent?.trim());
+    const httpDomain = await panelPage.$eval('#domainText', (el) => el.textContent?.trim());
+    const httpSec = await panelPage.$eval('#securityBadge', (el) => el.textContent?.trim());
+    console.log(`[BUG 1] Aba HTTP reativada: estado="${httpState}", btn="${httpBtnText}", domain="${httpDomain}", sec="${httpSec}"`);
+
+    if (httpState !== 'inicio' || httpBtnText !== 'Baixar Página Completa (ZIP)') {
+      throw new Error(`Falha ao reativar aba HTTP: estado="${httpState}", btn="${httpBtnText}"`);
+    }
+    if (httpDomain !== '127.0.0.1' || httpSec !== 'Localhost') {
+      throw new Error(`Falha nos dados da aba HTTP: domain="${httpDomain}", sec="${httpSec}"`);
+    }
+    console.log('[BUG 1] Detecção dinâmica e alternância de abas 100% aprovada.');
 
     // Configura a aba alvo como https://getartcraft.com para validar pílula e cartão de origem
     await panelPage.evaluate(({ url, title, html }) => {

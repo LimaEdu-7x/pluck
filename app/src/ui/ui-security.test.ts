@@ -59,11 +59,12 @@ describe('UI Security & Sanitization (Defesa contra DOM-XSS / Injeção HTML)', 
 });
 
 describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela', () => {
-  it('manifest.json declara Content Security Policy (CSP) explícita e restritiva para extension_pages', () => {
+  it('manifest.json declara Content Security Policy (CSP) explícita e permissão debugger em permissions', () => {
     const manifestPath = path.resolve(__dirname, '../../manifest.json');
     const raw = fs.readFileSync(manifestPath, 'utf-8');
     const manifest = JSON.parse(raw);
 
+    expect(manifest.version).toBe('0.2.0');
     expect(manifest.content_security_policy).toBeDefined();
     expect(manifest.content_security_policy.extension_pages).toBeDefined();
 
@@ -71,9 +72,13 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'none'");
+
+    // [BUG 3] Em MV3, debugger deve estar em permissions (não pode ser optional_permissions)
+    expect(manifest.permissions).toContain('debugger');
+    expect(manifest.optional_permissions || []).not.toContain('debugger');
   });
 
-  it('cleanupResources revoga Blob URLs e remove permissões temporárias no fechamento da janela', () => {
+  it('cleanupResources revoga Blob URLs e libera memória no encerramento', () => {
     const revokedUrls: string[] = [];
     const originalRevoke = URL.revokeObjectURL;
     URL.revokeObjectURL = vi.fn((url: string) => {
@@ -100,10 +105,6 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     cleanupResources();
 
     expect(typeof cleanupResources).toBe('function');
-    // [FIEL-05] Garante que a permissão debugger foi revogada
-    expect(removedOrigins).toEqual(
-      expect.arrayContaining([{ permissions: ['debugger'] }])
-    );
     URL.revokeObjectURL = originalRevoke;
   });
 
