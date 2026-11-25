@@ -31,10 +31,13 @@ async function runV4FinalSandboxTest() {
   if (!manifest.permissions || !manifest.permissions.includes('debugger')) {
     throw new Error("manifest.json deve conter 'debugger' em permissions regulares.");
   }
+  if (!manifest.permissions.includes('tabs')) {
+    throw new Error("manifest.json deve conter 'tabs' em permissions regulares para leitura no painel lateral.");
+  }
   if (manifest.optional_permissions && manifest.optional_permissions.includes('debugger')) {
     throw new Error("manifest.json NÃO pode conter 'debugger' em optional_permissions (rejeição do Chromium).");
   }
-  console.log('[0/8] manifest.json verificado com sucesso: 0 warnings, versão 0.2.0, debugger em permissions.');
+  console.log('[0/8] manifest.json verificado com sucesso: 0 warnings, versão 0.2.0, debugger e tabs em permissions.');
 
   const screenshotsDir = path.resolve(__dirname, 'screenshots');
   fs.mkdirSync(screenshotsDir, { recursive: true });
@@ -224,10 +227,25 @@ async function runV4FinalSandboxTest() {
       throw new Error(`Falha no brandTag: esperado conter 'v0.2.0', obtido '${brandVersion}'`);
     }
 
-    // [BUG 1] Teste E2E de troca de abas com 2 abas reais (Aba de Sistema chrome:// e Aba HTTP Fixture)
-    console.log('[BUG 1] Testando detecção dinâmica e alternância entre 2 abas (chrome:// e HTTP)...');
+    // [REGRESSÃO CHROME REAL] Teste 1: Detecção natural da aba HTTP ativa sem mocks
+    console.log('[REGRESSÃO CHROME REAL] Validando detecção automática da aba HTTP ativa (getartcraft-like)...');
+    const initialNaturalState = await panelPage.evaluate(() => window.__pluck.getState());
+    const initialNaturalDomain = await panelPage.$eval('#domainText', (el) => el.textContent?.trim());
+    const initialNaturalBtn = await panelPage.$eval('#btnMainAction', (el) => el.textContent?.trim());
+    const initialNaturalSec = await panelPage.$eval('#securityBadge', (el) => el.textContent?.trim());
+    console.log(`[Detecção Natural] estado="${initialNaturalState}", domain="${initialNaturalDomain}", sec="${initialNaturalSec}", btn="${initialNaturalBtn}"`);
 
-    // 1. Alterna para aba de sistema chrome://extensions
+    if (initialNaturalState !== 'inicio' || initialNaturalDomain !== '127.0.0.1') {
+      throw new Error(`Falha na detecção natural da aba HTTP: estado="${initialNaturalState}", domain="${initialNaturalDomain}"`);
+    }
+
+    // Salva print explícito da aba HTTP compatível com a pílula do host (getartcraft-like)
+    await panelPage.screenshot({ path: path.join(screenshotsDir, 'A-painel-escuro-compativel-host.png') });
+
+    // [REGRESSÃO CHROME REAL] Teste 2: Distinção estrita dos 3 Estados exigidos pelo Edu
+    console.log('[REGRESSÃO CHROME REAL] Validando distinção dos 3 estados: Sistema, Sem Acesso e Compatível...');
+
+    // ESTADO 2: Página de sistema (chrome://extensions)
     await panelPage.evaluate(() => {
       window.__pluck.updateActiveTab({
         id: 999,
@@ -240,7 +258,7 @@ async function runV4FinalSandboxTest() {
     const sysBtnText = await panelPage.$eval('#btnMainAction', (el) => el.textContent?.trim());
     const sysDomain = await panelPage.$eval('#domainText', (el) => el.textContent?.trim());
     const sysProto = await panelPage.$eval('#erroProtocol', (el) => el.textContent?.trim());
-    console.log(`[BUG 1] Aba de sistema: estado="${sysState}", btn="${sysBtnText}", domain="${sysDomain}", proto="${sysProto}"`);
+    console.log(`[ESTADO 2 - Sistema] estado="${sysState}", btn="${sysBtnText}", domain="${sysDomain}", proto="${sysProto}"`);
 
     if (sysState !== 'erro' || sysBtnText !== 'Aguardando aba compatível') {
       throw new Error(`Falha ao tratar aba de sistema: estado="${sysState}", btn="${sysBtnText}"`);
@@ -251,8 +269,37 @@ async function runV4FinalSandboxTest() {
     if (sysProto.includes('localhost')) {
       throw new Error(`[BUG 1] Protocolo no erro não deve apontar para localhost: "${sysProto}"`);
     }
+    await panelPage.screenshot({ path: path.join(screenshotsDir, 'A-painel-escuro-7-erro.png') });
 
-    // 2. Alterna de volta para a aba HTTP Fixture válida
+    // ESTADO 3: Sem Acesso (URL oculta pelo navegador / sem permissão 'tabs')
+    await panelPage.evaluate(() => {
+      window.__pluck.updateActiveTab({
+        id: 888,
+        url: undefined,
+        title: 'Aba Protegida'
+      });
+    });
+
+    const hiddenState = await panelPage.evaluate(() => window.__pluck.getState());
+    const hiddenBtnText = await panelPage.$eval('#btnMainAction', (el) => el.textContent?.trim());
+    const hiddenDomain = await panelPage.$eval('#domainText', (el) => el.textContent?.trim());
+    const hiddenSec = await panelPage.$eval('#securityBadge', (el) => el.textContent?.trim());
+    const isSemAcessoActive = await panelPage.$eval('#view-sem-acesso', (el) => el.classList.contains('active'));
+    const isErroActive = await panelPage.$eval('#view-erro', (el) => el.classList.contains('active'));
+    console.log(`[ESTADO 3 - Sem Acesso] estado="${hiddenState}", btn="${hiddenBtnText}", domain="${hiddenDomain}", sec="${hiddenSec}", semAcessoView=${isSemAcessoActive}, erroView=${isErroActive}`);
+
+    if (hiddenState !== 'sem_acesso' || hiddenBtnText !== 'Acesso à aba restrito') {
+      throw new Error(`Falha no estado sem_acesso: estado="${hiddenState}", btn="${hiddenBtnText}"`);
+    }
+    if (hiddenDomain !== 'Sem acesso' || hiddenSec !== 'Acesso Restrito') {
+      throw new Error(`Falha nos dados visuais de sem_acesso: domain="${hiddenDomain}", sec="${hiddenSec}"`);
+    }
+    if (!isSemAcessoActive || isErroActive) {
+      throw new Error(`view-sem-acesso deve estar ativa e view-erro deve estar inativa no estado sem_acesso!`);
+    }
+    await panelPage.screenshot({ path: path.join(screenshotsDir, 'A-painel-escuro-sem-acesso.png') });
+
+    // ESTADO 1: Retorno para Aba Compatível (Fixture HTTP)
     await panelPage.evaluate((url) => {
       window.__pluck.updateActiveTab({
         id: 101,
@@ -265,7 +312,7 @@ async function runV4FinalSandboxTest() {
     const httpBtnText = await panelPage.$eval('#btnMainAction', (el) => el.textContent?.trim());
     const httpDomain = await panelPage.$eval('#domainText', (el) => el.textContent?.trim());
     const httpSec = await panelPage.$eval('#securityBadge', (el) => el.textContent?.trim());
-    console.log(`[BUG 1] Aba HTTP reativada: estado="${httpState}", btn="${httpBtnText}", domain="${httpDomain}", sec="${httpSec}"`);
+    console.log(`[ESTADO 1 - Compatível Reativado] estado="${httpState}", btn="${httpBtnText}", domain="${httpDomain}", sec="${httpSec}"`);
 
     if (httpState !== 'inicio' || httpBtnText !== 'Baixar Página Completa (ZIP)') {
       throw new Error(`Falha ao reativar aba HTTP: estado="${httpState}", btn="${httpBtnText}"`);
@@ -273,7 +320,7 @@ async function runV4FinalSandboxTest() {
     if (httpDomain !== '127.0.0.1' || httpSec !== 'Localhost') {
       throw new Error(`Falha nos dados da aba HTTP: domain="${httpDomain}", sec="${httpSec}"`);
     }
-    console.log('[BUG 1] Detecção dinâmica e alternância de abas 100% aprovada.');
+    console.log('[REGRESSÃO CHROME REAL] Distinção dos 3 estados 100% aprovada.');
 
     // Configura a aba alvo como https://getartcraft.com para validar pílula e cartão de origem
     await panelPage.evaluate(({ url, title, html }) => {

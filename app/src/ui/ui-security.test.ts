@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createBaixandoRow, createConfigItem } from './ui-helpers';
-import { cleanupResources } from './sidepanel';
+import { cleanupResources, isSystemBrowserPage } from './sidepanel';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -76,6 +76,24 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     // [BUG 3] Em MV3, debugger deve estar em permissions (não pode ser optional_permissions)
     expect(manifest.permissions).toContain('debugger');
     expect(manifest.optional_permissions || []).not.toContain('debugger');
+
+    // [REGRESSÃO CHROME REAL] Permissão 'tabs' obrigatória para ler URL no painel lateral
+    expect(manifest.permissions).toContain('tabs');
+  });
+
+  it('isSystemBrowserPage identifica páginas internas do navegador e rejeita sites comuns', () => {
+    expect(isSystemBrowserPage('chrome://extensions')).toBe(true);
+    expect(isSystemBrowserPage('edge://settings')).toBe(true);
+    expect(isSystemBrowserPage('about:blank')).toBe(true);
+    expect(isSystemBrowserPage('chrome-extension://xyz/options.html')).toBe(true);
+    expect(isSystemBrowserPage('devtools://devtools/bundled/inspector.html')).toBe(true);
+    expect(isSystemBrowserPage('view-source:https://google.com')).toBe(true);
+
+    expect(isSystemBrowserPage('https://getartcraft.com')).toBe(false);
+    expect(isSystemBrowserPage('http://127.0.0.1:8080/index.html')).toBe(false);
+    expect(isSystemBrowserPage('http://localhost:3000')).toBe(false);
+    expect(isSystemBrowserPage('file:///C:/Users/file.html')).toBe(false);
+    expect(isSystemBrowserPage('')).toBe(false);
   });
 
   it('cleanupResources revoga Blob URLs e libera memória no encerramento', () => {

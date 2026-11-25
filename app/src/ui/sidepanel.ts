@@ -12,6 +12,7 @@ export type UiState =
   | 'pausado'
   | 'pronto'
   | 'erro'
+  | 'sem_acesso'
   | 'permissao'
   | 'login';
 
@@ -86,6 +87,34 @@ if (typeof window !== 'undefined') {
 // --------------------------------------------------------------------------
 // ATUALIZAÇÃO VISUAL DE SEGURANÇA E DOMÍNIO
 // --------------------------------------------------------------------------
+export function isSystemBrowserPage(url: string): boolean {
+  if (!url) return false;
+  const lower = url.toLowerCase().trim();
+  return (
+    lower.startsWith('chrome://') ||
+    lower.startsWith('edge://') ||
+    lower.startsWith('about:') ||
+    lower.startsWith('chrome-extension://') ||
+    lower.startsWith('devtools://') ||
+    lower.startsWith('view-source:')
+  );
+}
+
+export function updateSecurityPillForHiddenUrl() {
+  const pill = document.getElementById('headerDomainPill');
+  const dot = document.getElementById('domainDot');
+  const dText = document.getElementById('domainText');
+  const badge = document.getElementById('securityBadge');
+
+  if (pill) pill.className = 'domain-pill warn';
+  if (dot) dot.className = 'status-dot warn';
+  if (dText) dText.textContent = 'Sem acesso';
+  if (badge) {
+    badge.className = 'security-badge warn';
+    badge.textContent = 'Acesso Restrito';
+  }
+}
+
 function updateSecurityPill(url: string) {
   const pill = document.getElementById('headerDomainPill');
   const dot = document.getElementById('domainDot');
@@ -131,6 +160,13 @@ function updateSecurityPill(url: string) {
         badge.className = 'security-badge warn';
         badge.textContent = 'HTTP (Não seguro)';
       }
+    } else if (isSystemBrowserPage(url)) {
+      pill.className = 'domain-pill error';
+      dot.className = 'status-dot err';
+      if (badge) {
+        badge.className = 'security-badge muted';
+        badge.textContent = 'Sistema';
+      }
     } else {
       pill.className = 'domain-pill muted';
       dot.className = 'status-dot muted';
@@ -140,9 +176,9 @@ function updateSecurityPill(url: string) {
       }
     }
   } catch {
-    dText.textContent = 'Incompatível';
+    dText.textContent = isSystemBrowserPage(url) ? 'Sistema' : 'Incompatível';
     dot.className = 'status-dot muted';
-    if (badge) badge.textContent = 'Incompatível';
+    if (badge) badge.textContent = isSystemBrowserPage(url) ? 'Sistema' : 'Incompatível';
   }
 }
 
@@ -160,6 +196,7 @@ export function setState(state: UiState, data?: any) {
     'pausado',
     'pronto',
     'erro',
+    'sem_acesso',
     'permissao',
     'login'
   ];
@@ -179,7 +216,8 @@ export function setState(state: UiState, data?: any) {
         }
       }
     } else {
-      const el = document.getElementById('view-' + s);
+      const viewId = 'view-' + (s === 'sem_acesso' ? 'sem-acesso' : s);
+      const el = document.getElementById(viewId);
       if (el) {
         if (s === state) {
           el.classList.add('active');
@@ -190,28 +228,44 @@ export function setState(state: UiState, data?: any) {
     }
   }
 
-  // Header domain pill em estado de erro
+  // Header domain pill e status específicos por estado
   const pill = document.getElementById('headerDomainPill');
+  const dot = document.getElementById('domainDot');
   const dText = document.getElementById('domainText');
-  if (state === 'erro') {
+  const badge = document.getElementById('securityBadge');
+
+  if (state === 'sem_acesso') {
+    updateSecurityPillForHiddenUrl();
+    const semDet = document.getElementById('semAcessoDetail');
+    if (semDet) {
+      semDet.textContent = currentTabTitle
+        ? `Aba ativa identificada: "${currentTabTitle}"`
+        : "Permissão 'tabs' necessária no navegador";
+    }
+  } else if (state === 'erro') {
     if (pill) pill.className = 'domain-pill error';
+    if (dot) dot.className = 'status-dot err';
     if (dText) {
       if (currentTabUrl) {
         try {
           const parsed = new URL(currentTabUrl);
           dText.textContent = parsed.hostname || parsed.protocol.replace(':', '');
         } catch {
-          dText.textContent = currentTabUrl.slice(0, 16);
+          dText.textContent = 'Sistema';
         }
       } else {
-        dText.textContent = 'Incompatível';
+        dText.textContent = 'Sistema';
       }
+    }
+    if (badge) {
+      badge.className = 'security-badge muted';
+      badge.textContent = 'Sistema';
     }
     const errProto = document.getElementById('erroProtocol');
     if (errProto) {
       errProto.textContent = currentTabUrl
         ? `Protocolo atual: ${currentTabUrl.split('?')[0]}`
-        : 'Selecione uma aba com página web (HTTP/HTTPS)';
+        : 'Página de sistema interno do navegador';
     }
   } else if (state === 'login') {
     if (pill) pill.className = 'domain-pill warn';
@@ -486,6 +540,17 @@ function renderFooterActions(_data?: any) {
 
     note.textContent = 'Arquivo pronto na pasta Downloads do navegador';
     footer.appendChild(btnOpen);
+    footer.appendChild(note);
+  } else if (currentState === 'sem_acesso') {
+    const btnDis = document.createElement('button');
+    btnDis.type = 'button';
+    btnDis.className = 'btn-disabled';
+    btnDis.id = 'btnMainAction';
+    btnDis.disabled = true;
+    btnDis.textContent = 'Acesso à aba restrito';
+
+    note.textContent = 'Conceda permissão no navegador para identificar esta aba';
+    footer.appendChild(btnDis);
     footer.appendChild(note);
   } else if (currentState === 'erro') {
     const btnDis = document.createElement('button');
@@ -1204,7 +1269,6 @@ export async function getPanelActiveTab(): Promise<chrome.tabs.Tab | null> {
   if (typeof chrome === 'undefined' || !chrome.tabs) return null;
 
   try {
-    // 1. Tenta obter o windowId da janela atual onde o painel lateral está acoplado
     let windowId: number | undefined;
     if (chrome.windows && typeof chrome.windows.getCurrent === 'function') {
       try {
@@ -1215,24 +1279,41 @@ export async function getPanelActiveTab(): Promise<chrome.tabs.Tab | null> {
       } catch {}
     }
 
-    // 2. Se temos windowId da janela do painel, busca a aba ativa nessa janela
     if (windowId !== undefined) {
+      // 1. Procura aba ativa na janela do painel
       const tabs = await chrome.tabs.query({ active: true, windowId });
-      const target = tabs.find((t) => t && t.url && !t.url.startsWith('chrome-extension://'));
+      const target = tabs.find((t) => t && (!t.url || !t.url.startsWith('chrome-extension://')));
       if (target) return target;
+
+      // 2. Se a aba ativa for o próprio painel/extensão, procura outra aba web não-sistema nessa janela
+      const windowTabs = await chrome.tabs.query({ windowId });
+      const webTarget = windowTabs.find((t) => t && t.url && !isSystemBrowserPage(t.url) && !t.url.startsWith('chrome-extension://'));
+      if (webTarget) return webTarget;
+
+      // 3. Se não houver web tab, qualquer outra aba não-extensão nessa janela
+      const fallbackTarget = windowTabs.find((t) => t && (!t.url || !t.url.startsWith('chrome-extension://')));
+      if (fallbackTarget) return fallbackTarget;
     }
 
     // 3. Fallback: tabs.query { active: true, currentWindow: true }
-    const [currentWinTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (currentWinTab && currentWinTab.url && !currentWinTab.url.startsWith('chrome-extension://')) {
-      return currentWinTab;
-    }
+    const currentWinTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const cTarget = currentWinTabs.find((t) => t && (!t.url || !t.url.startsWith('chrome-extension://')));
+    if (cTarget) return cTarget;
 
-    // 4. Fallback: tabs.query { active: true, lastFocusedWindow: true }
-    const [lastFocusedTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (lastFocusedTab && lastFocusedTab.url && !lastFocusedTab.url.startsWith('chrome-extension://')) {
-      return lastFocusedTab;
-    }
+    // 4. Fallback: qualquer aba ativa não-extensão em qualquer janela focada
+    const lastFocusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const lTarget = lastFocusedTabs.find((t) => t && (!t.url || !t.url.startsWith('chrome-extension://')));
+    if (lTarget) return lTarget;
+
+    // 5. Fallback: qualquer aba ativa não-extensão
+    const allActive = await chrome.tabs.query({ active: true });
+    const aTarget = allActive.find((t) => t && (!t.url || !t.url.startsWith('chrome-extension://')));
+    if (aTarget) return aTarget;
+
+    // 6. Último fallback: qualquer aba não-extensão
+    const allTabs = await chrome.tabs.query({});
+    const anyTarget = allTabs.find((t) => t && (!t.url || !t.url.startsWith('chrome-extension://')));
+    if (anyTarget) return anyTarget;
   } catch (err) {
     console.warn('Erro ao resolver aba ativa do painel:', err);
   }
@@ -1244,49 +1325,76 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
   if (typeof chrome === 'undefined' || !chrome.tabs) return;
 
   try {
-    const targetTab = tabOverride || (await getPanelActiveTab());
+    const targetTab = tabOverride !== undefined ? tabOverride : (await getPanelActiveTab());
 
-    if (targetTab && targetTab.url) {
-      // Nunca usar a aba do próprio painel lateral
-      if (targetTab.url.startsWith('chrome-extension://')) {
-        return;
-      }
-
-      currentTabId = targetTab.id ?? null;
-      currentTabUrl = targetTab.url;
-      currentTabTitle = targetTab.title || 'Página';
-
-      try {
-        currentTabOrigin = new URL(currentTabUrl).origin;
-      } catch {
-        currentTabOrigin = '';
-      }
-
-      const oTitle = document.getElementById('originTitle');
-      const oUrl = document.getElementById('originUrl');
-      if (oTitle) oTitle.textContent = currentTabTitle;
-      if (oUrl) oUrl.textContent = currentTabUrl;
-
-      updateSecurityPill(currentTabUrl);
-
-      if (!validateUrl(currentTabUrl, true).valid) {
-        setState('erro');
-      } else if (currentState === 'erro') {
-        setState('inicio');
-      }
-    } else {
+    if (!targetTab) {
+      currentTabId = null;
       currentTabUrl = '';
-      currentTabTitle = 'Aguardando aba compatível';
+      currentTabTitle = 'Nenhuma aba ativa';
       const oTitle = document.getElementById('originTitle');
       const oUrl = document.getElementById('originUrl');
       if (oTitle) oTitle.textContent = currentTabTitle;
       if (oUrl) oUrl.textContent = '—';
-      updateSecurityPill('');
+      updateSecurityPillForHiddenUrl();
+      setState('sem_acesso');
+      return;
+    }
+
+    currentTabId = targetTab.id ?? null;
+
+    // CENÁRIO 1: O navegador ocultou a URL da aba (falta de permissão 'tabs' ou aba restrita)
+    if (!targetTab.url) {
+      currentTabUrl = '';
+      currentTabTitle = targetTab.title || 'Aba ativa (identificação oculta)';
+      currentTabOrigin = '';
+      const oTitle = document.getElementById('originTitle');
+      const oUrl = document.getElementById('originUrl');
+      if (oTitle) oTitle.textContent = currentTabTitle;
+      if (oUrl) oUrl.textContent = 'URL oculta pelo navegador · Permissão necessária';
+      updateSecurityPillForHiddenUrl();
+      setState('sem_acesso');
+      return;
+    }
+
+    // Se for a própria página da extensão, ignora para não sobrescrever a aba inspecionada
+    if (targetTab.url.startsWith('chrome-extension://') && targetTab.url.includes(chrome.runtime?.id || 'pluck')) {
+      return;
+    }
+
+    currentTabUrl = targetTab.url;
+    currentTabTitle = targetTab.title || 'Página Web';
+
+    try {
+      currentTabOrigin = new URL(currentTabUrl).origin;
+    } catch {
+      currentTabOrigin = '';
+    }
+
+    const oTitle = document.getElementById('originTitle');
+    const oUrl = document.getElementById('originUrl');
+    if (oTitle) oTitle.textContent = currentTabTitle;
+    if (oUrl) oUrl.textContent = currentTabUrl;
+
+    // CENÁRIO 2: Página de sistema interna (chrome://, edge://, about:, devtools:)
+    if (isSystemBrowserPage(currentTabUrl)) {
+      updateSecurityPill(currentTabUrl);
+      setState('erro');
+      return;
+    }
+
+    // CENÁRIO 3: Página web compatível (HTTP, HTTPS, file://)
+    updateSecurityPill(currentTabUrl);
+
+    if (validateUrl(currentTabUrl, true).valid) {
+      if (currentState === 'erro' || currentState === 'sem_acesso') {
+        setState('inicio');
+      }
+    } else {
       setState('erro');
     }
   } catch (err) {
     console.warn('Erro ao atualizar aba ativa:', err);
-    setState('erro');
+    setState('sem_acesso');
   }
 }
 
@@ -1445,28 +1553,43 @@ if (typeof window !== 'undefined') {
     toggleAutoscroll,
     updateActiveTab,
     getPanelActiveTab,
+    isSystemBrowserPage,
     getState: () => currentState,
     getSelectedModule: () => currentMode === 'zip' ? 'page-zip' : (currentMode === 'html' ? 'page-html' : 'images-zip'),
     getSelectedMode: () => currentMode,
     getSelectedScope: () => currentScope,
     getLimits: () => ({ limitPages, limitMb, includeSubdomains }),
-    setTargetTab: ({ url, title, html }: { url: string; title: string; html?: string }) => {
-      currentTabUrl = url;
-      currentTabTitle = title;
+    setTargetTab: ({ url, title, html }: { url?: string; title?: string; html?: string }) => {
+      currentTabUrl = url || '';
+      currentTabTitle = title || (url ? 'Página Web' : 'Aba ativa (identificação oculta)');
       if (html) targetTabOverrideHtml = html;
       try {
-        currentTabOrigin = new URL(url).origin;
-      } catch {}
+        currentTabOrigin = url ? new URL(url).origin : '';
+      } catch {
+        currentTabOrigin = '';
+      }
 
       const oTitle = document.getElementById('originTitle');
       const oUrl = document.getElementById('originUrl');
-      if (oTitle) oTitle.textContent = title;
-      if (oUrl) oUrl.textContent = url;
+      if (oTitle) oTitle.textContent = currentTabTitle;
+      if (oUrl) oUrl.textContent = url || 'URL oculta pelo navegador · Permissão necessária';
+
+      if (!url) {
+        updateSecurityPillForHiddenUrl();
+        setState('sem_acesso');
+        return;
+      }
+
+      if (isSystemBrowserPage(url)) {
+        updateSecurityPill(url);
+        setState('erro');
+        return;
+      }
 
       updateSecurityPill(url);
       if (!validateUrl(url, true).valid) {
         setState('erro');
-      } else if (currentState === 'erro') {
+      } else if (currentState === 'erro' || currentState === 'sem_acesso') {
         setState('inicio');
       }
     }

@@ -460,6 +460,41 @@
         </div>
       </section>
 
+      <!-- 7.1 SEM ACESSO VIEW (URL OCULTA / SEM PERMISSÃO) -->
+      <section class="view-state" id="view-sem-acesso" aria-label="Acesso à aba restrito">
+        <div class="state-header">
+          <div class="state-status-title">
+            <span class="status-dot warn"></span>
+            <span style="color: var(--status-warn);">Acesso à aba restrito</span>
+          </div>
+          <span class="state-status-sub">O navegador ocultou os detalhes desta página por falta de permissão</span>
+        </div>
+
+        <div class="card" style="border-color: var(--status-warn);">
+          <span class="origin-title" style="color: var(--status-warn); margin-bottom: 4px; display: block;">Identificação da Página Indisponível:</span>
+          <p class="limits-footnote">O navegador requer permissão de abas ('tabs') para ler a URL e o título da página ativa.</p>
+          <p class="limits-footnote" id="semAcessoDetail" style="margin-top: 4px; font-family: var(--font-mono); color: var(--accent);">Permissão 'tabs' necessária no navegador</p>
+        </div>
+
+        <div class="card">
+          <span class="limits-title" style="margin-bottom: 8px; display: block;">O QUE FAZER AGORA</span>
+          <div class="metrics-table">
+            <div class="metrics-row">
+              <span class="metrics-lbl">1. Recarregue a extensão:</span>
+              <span class="metrics-val" style="color: var(--accent);">Atualize em chrome://extensions</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">2. Foco na página:</span>
+              <span class="metrics-val" style="color: var(--accent);">Clique na aba desejada</span>
+            </div>
+            <div class="metrics-row">
+              <span class="metrics-lbl">3. Detecção:</span>
+              <span class="metrics-val">Automática ao reativar</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 8. PERMISSÃO VIEW -->
       <section class="view-state" id="view-permissao" aria-label="Permissão necessária">
         <div class="state-header">
