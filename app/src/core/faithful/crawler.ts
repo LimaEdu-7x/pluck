@@ -2,6 +2,7 @@
 
 import { CrawlLimits } from './types';
 import { validateUrl, isLocalhostPage } from '../security/url-guard';
+import { cleanUrlTokens } from '../security/privacy-cleaner';
 
 export interface QueuedPage {
   url: string;
@@ -46,10 +47,11 @@ export function createCrawlSession(
   };
 }
 
-// Normaliza URL removendo hash e barras finais redundantes
+// Normaliza URL removendo hash, barras finais redundantes e tokens sensíveis
 export function normalizeCrawlUrl(rawUrl: string): string {
   try {
-    const u = new URL(rawUrl);
+    const cleaned = cleanUrlTokens(rawUrl);
+    const u = new URL(cleaned);
     u.hash = '';
     let normalized = u.href;
     if (normalized.endsWith('/') && u.pathname !== '/') {

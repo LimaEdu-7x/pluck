@@ -1,6 +1,7 @@
 import { safePath } from '../security/safe-path';
 import { generateReplayShim } from './replay-shim';
 import { isLocalhostPage, isPrivateIpOrHost } from '../security/url-guard';
+import { cleanFormValues, cleanAllElementUrlTokens, cleanUrlTokens } from '../security/privacy-cleaner';
 
 export const BLOCKED_IMAGE_DATA =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -16,8 +17,9 @@ export interface PathMapping {
 // Mapeia URL para caminho no ZIP, isolando CDNs em _external/<host>/
 export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
   try {
+    const cleanedUrlStr = cleanUrlTokens(urlStr, basePageUrl);
     const isBaseLocal = isLocalhostPage(basePageUrl);
-    const url = new URL(urlStr, basePageUrl);
+    const url = new URL(cleanedUrlStr, basePageUrl);
     const base = new URL(basePageUrl);
 
     // [FIEL-09] Bloqueia sub-recursos de loopback ou IPs privados quando a página base é remota
@@ -304,6 +306,9 @@ export function normalizeImages(
 
 // Higieniza formulários, campos de senha e dados sensíveis
 export function sanitizeSensitiveFields(doc: Document): void {
+  // Limpa campos de formulários preenchidos pelo usuário (text, email, tel, textareas, selects, meta tags)
+  cleanFormValues(doc);
+
   // Remove campos de senha
   const passwords = doc.querySelectorAll('input[type="password"]');
   for (let i = 0; i < passwords.length; i++) {
@@ -415,6 +420,7 @@ export function rewriteHtmlDocument(
   dropDynamicRevealArtifacts(doc);
   normalizeImages(doc, currentZipPath, urlToZipMap, pageUrl);
   sanitizeSensitiveFields(doc);
+  cleanAllElementUrlTokens(doc, pageUrl);
   injectFaithfulCsp(doc);
   injectFetchInterceptor(doc, currentZipPath, urlToZipMap);
 

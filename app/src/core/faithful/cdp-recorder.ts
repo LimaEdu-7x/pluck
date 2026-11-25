@@ -1,30 +1,13 @@
 // Gravador de Rede CDP via chrome.debugger (Captura 100% fiel de tráfego)
 
 import { CapturedResource } from './types';
+import { cleanUrlTokens } from '../security/privacy-cleaner';
 
 export const MAX_CDP_RESOURCES = 2000;
 export const MAX_CDP_BYTES = 150 * 1024 * 1024; // 150 MB
 
 const SENSITIVE_PATH_REGEX =
   /(\/api\/|\/auth\/|\/token\/|\/oauth\/|\/user\/|\/session\/|\/account\/|\/graphql|\/me(\/|$|\?)|login|logout)/i;
-
-const SENSITIVE_QUERY_PARAMS = new Set([
-  'token',
-  'auth',
-  'key',
-  'sig',
-  'signature',
-  'session',
-  'session_id',
-  'access_token',
-  'refresh_token',
-  'secret',
-  'jwt',
-  'password',
-  'code',
-  'api_key',
-  'apikey'
-]);
 
 // [FIEL-04] Detecta se um recurso refere-se a dados de API autenticada ou JSON confidencial
 export function isSensitiveResource(url: string, mimeType: string): boolean {
@@ -65,20 +48,7 @@ export function isSensitiveResource(url: string, mimeType: string): boolean {
 
 // [FIEL-04] Remove tokens e parâmetros sensíveis de URLs gravadas em disco/mapas
 export function sanitizeUrlForStorage(urlStr: string): string {
-  if (!urlStr || typeof urlStr !== 'string') return urlStr;
-  try {
-    const parsed = new URL(urlStr);
-    let changed = false;
-    for (const key of Array.from(parsed.searchParams.keys())) {
-      if (SENSITIVE_QUERY_PARAMS.has(key.toLowerCase())) {
-        parsed.searchParams.delete(key);
-        changed = true;
-      }
-    }
-    return changed ? parsed.href : urlStr;
-  } catch {
-    return urlStr;
-  }
+  return cleanUrlTokens(urlStr);
 }
 
 export interface PendingCdpResponse {

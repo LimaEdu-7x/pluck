@@ -92,6 +92,64 @@ if (typeof window !== 'undefined') {
 }
 
 // --------------------------------------------------------------------------
+// REINICIALIZAÇÃO PARA TELA INICIAL (SEM FECHAR O PAINEL)
+// --------------------------------------------------------------------------
+export function resetToInitialState() {
+  // 1. Interrompe qualquer captura/autoscroll em andamento e limpa recursos/permissões
+  isCaptureCancelled = true;
+  isCapturePaused = false;
+  skipAutoscrollRequested = false;
+  cleanupResources();
+
+  // 2. Limpa dados de progresso e resultado anterior
+  partialFilesRetained = {};
+  partialStatsRetained = {
+    pages: 0,
+    assets: 0,
+    bytes: 0,
+    elapsedSeconds: 0
+  };
+  lastDownloadInfo = null;
+
+  // Limpa elementos visuais de progresso e métricas no DOM
+  const scrollPct = document.getElementById('scrollPct');
+  if (scrollPct) scrollPct.textContent = '0 de 0 px (0%)';
+  const scrollFill = document.getElementById('scrollFill');
+  if (scrollFill) scrollFill.style.width = '0%';
+  const scrollStepNote = document.getElementById('scrollStepNote');
+  if (scrollStepNote) scrollStepNote.textContent = 'Iniciando rolagem suave do DOM...';
+  const scrollVerticalPos = document.getElementById('scrollVerticalPos');
+  if (scrollVerticalPos) scrollVerticalPos.textContent = '0 px de 0 px';
+  const scrollImagesCount = document.getElementById('scrollImagesCount');
+  if (scrollImagesCount) scrollImagesCount.textContent = '0 imagens carregadas pelo DOM';
+  const scrollStepsCount = document.getElementById('scrollStepsCount');
+  if (scrollStepsCount) scrollStepsCount.textContent = '0 passos de rolagem';
+
+  const downPct = document.getElementById('downPct');
+  if (downPct) downPct.textContent = '0% CONCLUÍDO';
+  const downFill = document.getElementById('downFill');
+  if (downFill) downFill.style.width = '0%';
+  const downFile = document.getElementById('downFile');
+  if (downFile) downFile.textContent = 'Iniciando captura de recursos...';
+  const cntPages = document.getElementById('cntPages');
+  if (cntPages) cntPages.textContent = '1 de 1 página (100%)';
+  const cntRes = document.getElementById('cntRes');
+  if (cntRes) cntRes.textContent = '0 de 0 arquivos';
+  const cntMb = document.getElementById('cntMb');
+  if (cntMb) cntMb.textContent = '0,0 MB transferidos';
+  const cntTime = document.getElementById('cntTime');
+  if (cntTime) cntTime.textContent = '00:00 decorridos';
+
+  // 3. Volta para o estado inicial padrão, mantendo a aba/URL ativa
+  setScope('esta_pagina');
+  selectMode('zip');
+  setState('inicio');
+
+  // Permite que uma nova captura seja executada
+  isCaptureCancelled = false;
+}
+
+// --------------------------------------------------------------------------
 // ATUALIZAÇÃO VISUAL DE SEGURANÇA E DOMÍNIO
 // --------------------------------------------------------------------------
 export function isSystemBrowserPage(url: string): boolean {
@@ -110,11 +168,13 @@ export function isSystemBrowserPage(url: string): boolean {
 export function updateSecurityPillForHiddenUrl() {
   const pill = document.getElementById('headerDomainPill');
   const dot = document.getElementById('domainDot');
+  const ring = document.getElementById('domainRing');
   const dText = document.getElementById('domainText');
   const badge = document.getElementById('securityBadge');
 
-  if (pill) pill.className = 'domain-pill warn';
-  if (dot) dot.className = 'status-dot warn';
+  if (pill) pill.className = 'site-chip domain-pill warn';
+  if (dot) dot.className = 'status-dot dot-core-amber warn';
+  if (ring) ring.className = 'ring-spin-amber';
   if (dText) dText.textContent = 'Sem acesso';
   if (badge) {
     badge.className = 'security-badge warn';
@@ -122,21 +182,38 @@ export function updateSecurityPillForHiddenUrl() {
   }
 }
 
-function updateSecurityPill(url: string) {
+function updateSecurityPill(url: string, tabStatus?: string) {
   const pill = document.getElementById('headerDomainPill');
   const dot = document.getElementById('domainDot');
+  const ring = document.getElementById('domainRing');
   const dText = document.getElementById('domainText');
   const badge = document.getElementById('securityBadge');
+  const popUrl = document.getElementById('popover-full-url');
+  const popStatus = document.getElementById('popover-status-text');
+  const savePath = document.getElementById('saveFolderPath');
 
   if (!pill || !dot || !dText) return;
 
+  if (popUrl) popUrl.textContent = url || '—';
+
   if (!url) {
-    pill.className = 'domain-pill muted';
-    dot.className = 'status-dot muted';
+    pill.className = 'site-chip domain-pill muted';
+    dot.className = 'status-dot dot-core-amber muted';
+    if (ring) ring.className = 'ring-spin-amber';
     dText.textContent = '—';
     if (badge) {
       badge.className = 'security-badge muted';
       badge.textContent = '—';
+    }
+    if (popStatus) {
+      popStatus.replaceChildren();
+      const mDot = document.createElement('span');
+      mDot.className = 'mini-dot';
+      mDot.style.background = '#F59E0B';
+      mDot.style.boxShadow = '0 0 6px #F59E0B';
+      popStatus.appendChild(mDot);
+      popStatus.appendChild(document.createTextNode(' AGUARDANDO ABA'));
+      popStatus.style.color = '#F59E0B';
     }
     return;
   }
@@ -144,48 +221,195 @@ function updateSecurityPill(url: string) {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname;
-    dText.textContent = host || parsed.protocol.replace(':', '');
+    const cleanHost = host || parsed.protocol.replace(':', '');
+    dText.textContent = cleanHost;
 
-    if (url.startsWith('https://')) {
-      pill.className = 'domain-pill';
-      dot.className = 'status-dot ok';
+    if (savePath) {
+      savePath.textContent = `Downloads / ${cleanHost || 'site'}.zip`;
+    }
+
+    if (isSystemBrowserPage(url)) {
+      pill.className = 'site-chip domain-pill error';
+      dot.className = 'status-dot dot-core-red err';
+      if (ring) ring.className = 'ring-static-red';
       if (badge) {
-        badge.className = 'security-badge';
-        badge.textContent = 'HTTPS (Seguro)';
+        badge.className = 'security-badge muted';
+        badge.textContent = 'Sistema';
       }
-    } else if (isLocalhostPage(url)) {
-      pill.className = 'domain-pill';
-      dot.className = 'status-dot ok';
+      if (popStatus) {
+        popStatus.replaceChildren();
+        const mDot = document.createElement('span');
+        mDot.className = 'mini-dot';
+        mDot.style.background = '#EF4444';
+        mDot.style.boxShadow = '0 0 6px #EF4444';
+        popStatus.appendChild(mDot);
+        popStatus.appendChild(document.createTextNode(' PÁGINA RESTRITA'));
+        popStatus.style.color = '#EF4444';
+      }
+    } else if (tabStatus === 'loading') {
+      pill.className = 'site-chip domain-pill warn';
+      dot.className = 'status-dot dot-core-amber warn';
+      if (ring) ring.className = 'ring-spin-amber';
+      if (badge) {
+        badge.className = 'security-badge warn';
+        badge.textContent = 'Carregando...';
+      }
+      if (popStatus) {
+        popStatus.replaceChildren();
+        const mDot = document.createElement('span');
+        mDot.className = 'mini-dot';
+        mDot.style.background = '#F59E0B';
+        mDot.style.boxShadow = '0 0 6px #F59E0B';
+        popStatus.appendChild(mDot);
+        popStatus.appendChild(document.createTextNode(' CARREGANDO RECURSOS'));
+        popStatus.style.color = '#F59E0B';
+      }
+    } else if (url.startsWith('https://') || isLocalhostPage(url)) {
+      pill.className = 'site-chip domain-pill';
+      dot.className = 'status-dot dot-core-green ok';
+      if (ring) ring.className = 'ring-pulse-green';
       if (badge) {
         badge.className = 'security-badge';
-        badge.textContent = 'Localhost';
+        badge.textContent = isLocalhostPage(url) ? 'Localhost' : 'HTTPS (Seguro)';
+      }
+      if (popStatus) {
+        popStatus.replaceChildren();
+        const mDot = document.createElement('span');
+        mDot.className = 'mini-dot';
+        mDot.style.background = '#3ECF8E';
+        mDot.style.boxShadow = '0 0 6px #3ECF8E';
+        popStatus.appendChild(mDot);
+        popStatus.appendChild(document.createTextNode(' CONECTADO À ABA'));
+        popStatus.style.color = '#3ECF8E';
       }
     } else if (url.startsWith('http://')) {
-      pill.className = 'domain-pill warn';
-      dot.className = 'status-dot warn';
+      pill.className = 'site-chip domain-pill warn';
+      dot.className = 'status-dot dot-core-amber warn';
+      if (ring) ring.className = 'ring-spin-amber';
       if (badge) {
         badge.className = 'security-badge warn';
         badge.textContent = 'HTTP (Não seguro)';
       }
-    } else if (isSystemBrowserPage(url)) {
-      pill.className = 'domain-pill error';
-      dot.className = 'status-dot err';
+      if (popStatus) {
+        popStatus.replaceChildren();
+        const mDot = document.createElement('span');
+        mDot.className = 'mini-dot';
+        mDot.style.background = '#F59E0B';
+        mDot.style.boxShadow = '0 0 6px #F59E0B';
+        popStatus.appendChild(mDot);
+        popStatus.appendChild(document.createTextNode(' HTTP INSEGURO'));
+        popStatus.style.color = '#F59E0B';
+      }
+    } else {
+      pill.className = 'site-chip domain-pill muted';
+      dot.className = 'status-dot dot-core-amber muted';
+      if (ring) ring.className = 'ring-spin-amber';
       if (badge) {
         badge.className = 'security-badge muted';
         badge.textContent = 'Sistema';
       }
-    } else {
-      pill.className = 'domain-pill muted';
-      dot.className = 'status-dot muted';
-      if (badge) {
-        badge.className = 'security-badge muted';
-        badge.textContent = 'Sistema';
+      if (popStatus) {
+        popStatus.replaceChildren();
+        const mDot = document.createElement('span');
+        mDot.className = 'mini-dot';
+        mDot.style.background = '#8A8F9E';
+        mDot.style.boxShadow = '0 0 6px #8A8F9E';
+        popStatus.appendChild(mDot);
+        popStatus.appendChild(document.createTextNode(' PÁGINA INCOMPATÍVEL'));
+        popStatus.style.color = '#8A8F9E';
       }
     }
   } catch {
     dText.textContent = isSystemBrowserPage(url) ? 'Sistema' : 'Incompatível';
-    dot.className = 'status-dot muted';
+    dot.className = 'status-dot dot-core-red muted';
+    if (ring) ring.className = 'ring-static-red';
     if (badge) badge.textContent = isSystemBrowserPage(url) ? 'Sistema' : 'Incompatível';
+  }
+}
+
+// --------------------------------------------------------------------------
+// GERENCIADOR DE POPOVER DA ABA ATIVA (v11.1)
+// --------------------------------------------------------------------------
+let popoverPinned = false;
+let popoverHoverTimer: any = null;
+
+export function setupPopoverEvents() {
+  const chip = document.getElementById('headerDomainPill');
+  const popover = document.getElementById('site-popover');
+  const btnSwitch = document.getElementById('btn-switch-tab');
+
+  if (!chip || !popover) return;
+  const chipEl = chip;
+  const popoverEl = popover;
+
+  function openPopover(pinned: boolean = false) {
+    popoverEl.removeAttribute('hidden');
+    chipEl.setAttribute('aria-expanded', 'true');
+    if (pinned) popoverPinned = true;
+  }
+
+  function closePopover() {
+    popoverEl.setAttribute('hidden', '');
+    chipEl.setAttribute('aria-expanded', 'false');
+    popoverPinned = false;
+  }
+
+  chipEl.onmouseenter = () => {
+    if (popoverPinned) return;
+    clearTimeout(popoverHoverTimer);
+    popoverHoverTimer = setTimeout(() => {
+      openPopover(false);
+    }, 300);
+  };
+
+  chipEl.onmouseleave = () => {
+    clearTimeout(popoverHoverTimer);
+    if (!popoverPinned) {
+      closePopover();
+    }
+  };
+
+  chipEl.onclick = (e) => {
+    e.stopPropagation();
+    if (popoverEl.hasAttribute('hidden')) {
+      openPopover(true);
+    } else {
+      closePopover();
+    }
+  };
+
+  popoverEl.onclick = (e) => {
+    e.stopPropagation();
+  };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', (e) => {
+      if (!chipEl.contains(e.target as Node) && !popoverEl.contains(e.target as Node)) {
+        closePopover();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closePopover();
+      }
+    });
+  }
+
+  if (btnSwitch) {
+    btnSwitch.onclick = async (e) => {
+      e.stopPropagation();
+      closePopover();
+      if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+        try {
+          const tabs = await chrome.tabs.query({ currentWindow: true });
+          const otherTabs = tabs.filter((t) => t.id && t.id !== currentTabId && (!t.url || !t.url.startsWith('chrome-extension://')));
+          if (otherTabs.length > 0 && otherTabs[0].id) {
+            await chrome.tabs.update(otherTabs[0].id, { active: true });
+          }
+        } catch {}
+      }
+    };
   }
 }
 
@@ -250,8 +474,21 @@ export function setState(state: UiState, data?: any) {
         : "Permissão 'tabs' necessária no navegador";
     }
   } else if (state === 'erro') {
-    if (pill) pill.className = 'domain-pill error';
-    if (dot) dot.className = 'status-dot err';
+    if (pill) pill.className = 'site-chip domain-pill error';
+    if (dot) dot.className = 'status-dot dot-core-red err';
+    const ring = document.getElementById('domainRing');
+    if (ring) ring.className = 'ring-static-red';
+    const popStatus = document.getElementById('popover-status-text');
+    if (popStatus) {
+      popStatus.replaceChildren();
+      const mDot = document.createElement('span');
+      mDot.className = 'mini-dot';
+      mDot.style.background = '#EF4444';
+      mDot.style.boxShadow = '0 0 6px #EF4444';
+      popStatus.appendChild(mDot);
+      popStatus.appendChild(document.createTextNode(' PÁGINA RESTRITA'));
+      popStatus.style.color = '#EF4444';
+    }
     if (dText) {
       if (currentTabUrl) {
         try {
@@ -443,6 +680,69 @@ function populateStateData(state: UiState, data?: any) {
 }
 
 // --------------------------------------------------------------------------
+// SVGs TABLER (MIT) EMBUTIDOS PARA A INTERFACE v11
+// --------------------------------------------------------------------------
+function createTablerSparkles(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p1.setAttribute('stroke', 'none');
+  p1.setAttribute('d', 'M0 0h24v24H0z');
+  p1.setAttribute('fill', 'none');
+
+  const p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p2.setAttribute('d', 'M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z');
+
+  svg.appendChild(p1);
+  svg.appendChild(p2);
+  return svg;
+}
+
+function createTablerArrowRight(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2.5');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p1.setAttribute('stroke', 'none');
+  p1.setAttribute('d', 'M0 0h24v24H0z');
+  p1.setAttribute('fill', 'none');
+
+  const p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p2.setAttribute('d', 'M5 12l14 0');
+
+  const p3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p3.setAttribute('d', 'M13 18l6 -6');
+
+  const p4 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p4.setAttribute('d', 'M13 6l6 6');
+
+  svg.appendChild(p1);
+  svg.appendChild(p2);
+  svg.appendChild(p3);
+  svg.appendChild(p4);
+  return svg;
+}
+
+// --------------------------------------------------------------------------
 // RENDERIZAÇÃO SEGURA DOS BOTÕES DO RODAPÉ (ZERO innerHTML)
 // --------------------------------------------------------------------------
 function renderFooterActions(_data?: any) {
@@ -458,27 +758,50 @@ function renderFooterActions(_data?: any) {
   if (currentState === 'inicio') {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'btn-primary';
+    btn.className = 'btn-primary btn-v11';
     btn.id = 'btnMainAction';
     btn.onclick = () => handlePrimaryStart();
 
+    // Ícone Tabler Sparkles à esquerda
+    btn.appendChild(createTablerSparkles());
+
+    // Bloco central com texto em Archivo Bold e sub em Special Elite
+    const centerWrap = document.createElement('div');
+    centerWrap.className = 'btn-v11-center';
+
+    const mainText = document.createElement('span');
+    mainText.className = 'btn-v11-title';
+
+    const subText = document.createElement('span');
+    subText.className = 'btn-v11-sub';
+
     if (currentScope === 'esta_pagina') {
-      if (currentMode === 'html') btn.textContent = 'Baixar HTML Autossuficiente';
-      else if (currentMode === 'images') btn.textContent = 'Baixar somente imagens (ZIP)';
-      else btn.textContent = 'Baixar Página Completa (ZIP)';
+      if (currentMode === 'html') {
+        mainText.textContent = 'Baixar HTML Autossuficiente';
+        subText.textContent = 'ARQUIVO ÚNICO .HTML';
+      } else if (currentMode === 'images') {
+        mainText.textContent = 'Baixar Galeria de Mídias';
+        subText.textContent = 'FOTOS E VETORES SVG EM ZIP';
+      } else {
+        mainText.textContent = 'Começar a arquivar';
+        subText.textContent = 'CÓPIA FIEL EM 1 CLIQUE · ARQUIVO .ZIP';
+      }
     } else if (currentScope === 'paginas_vinculadas') {
-      btn.textContent = 'Rastrear páginas vinculadas';
+      mainText.textContent = 'Rastrear páginas vinculadas';
+      subText.textContent = 'ROTAS INTERNAS EM ZIP';
     } else {
-      btn.textContent = 'Rastrear site inteiro';
+      mainText.textContent = 'Varredura Completa do Site';
+      subText.textContent = 'TODO O DOMÍNIO EM STREAMING';
     }
 
-    if (currentScope === 'esta_pagina' && currentMode === 'html') {
-      note.textContent = 'Arquivo único (.html) com estilos e imagens embutidos';
-    } else {
-      note.textContent = 'Processamento 100% local no seu navegador';
-    }
+    centerWrap.appendChild(mainText);
+    centerWrap.appendChild(subText);
+    btn.appendChild(centerWrap);
+
+    // Ícone Tabler Arrow Right à direita
+    btn.appendChild(createTablerArrowRight());
+
     footer.appendChild(btn);
-    footer.appendChild(note);
   } else if (currentState === 'rolando') {
     const btnSkip = document.createElement('button');
     btnSkip.type = 'button';
@@ -573,11 +896,28 @@ function renderFooterActions(_data?: any) {
     btnOpen.id = 'btnOpenResult';
     btnOpen.textContent = currentMode === 'html' ? 'Abrir Arquivo HTML' : 'Abrir Arquivo ZIP';
     btnOpen.onclick = () => {
-      setState('inicio');
+      if (typeof chrome !== 'undefined' && chrome.downloads && typeof chrome.downloads.showDefaultFolder === 'function') {
+        try {
+          chrome.downloads.showDefaultFolder();
+        } catch {}
+      } else {
+        resetToInitialState();
+      }
+    };
+
+    const btnBack = document.createElement('button');
+    btnBack.type = 'button';
+    btnBack.className = 'btn-secondary btn-small';
+    btnBack.id = 'btnBackToStart';
+    btnBack.textContent = 'Voltar ao início';
+    btnBack.setAttribute('aria-label', 'Voltar ao início');
+    btnBack.onclick = () => {
+      resetToInitialState();
     };
 
     note.textContent = 'Arquivo pronto na pasta Downloads do navegador';
     footer.appendChild(btnOpen);
+    footer.appendChild(btnBack);
     footer.appendChild(note);
   } else if (currentState === 'sem_acesso') {
     const btnDis = document.createElement('button');
@@ -598,8 +938,19 @@ function renderFooterActions(_data?: any) {
     btnDis.disabled = true;
     btnDis.textContent = 'Aguardando aba compatível';
 
-    note.textContent = 'Mude de aba para reativar o Pluck automaticamente';
+    const btnBack = document.createElement('button');
+    btnBack.type = 'button';
+    btnBack.className = 'btn-secondary btn-small';
+    btnBack.id = 'btnBackToStart';
+    btnBack.textContent = 'Voltar ao início';
+    btnBack.setAttribute('aria-label', 'Voltar ao início');
+    btnBack.onclick = () => {
+      resetToInitialState();
+    };
+
+    note.textContent = 'Mude de aba ou volte ao início para tentar novamente';
     footer.appendChild(btnDis);
+    footer.appendChild(btnBack);
     footer.appendChild(note);
   } else if (currentState === 'permissao') {
     const dual = document.createElement('div');
@@ -910,24 +1261,46 @@ export function updateWebGLNotice() {
   }
 }
 
-export function selectMode(mode: UiMode) {
-  currentMode = mode;
+export function selectMode(mode: UiMode | 'piece' | 'site') {
+  if (mode === 'piece') {
+    currentMode = 'zip';
+  } else if (mode === 'site') {
+    currentMode = 'zip';
+    setScope('site_inteiro');
+  } else {
+    currentMode = mode;
+  }
 
   const mZip = document.getElementById('mode-zip');
+  const mPiece = document.getElementById('mode-piece');
   const mHtml = document.getElementById('mode-html');
   const mImgs = document.getElementById('mode-images');
+  const mSite = document.getElementById('mode-site');
 
   if (mZip) {
-    mZip.className = `card interactive mode-card ${mode === 'zip' ? 'selected' : ''}`;
-    mZip.setAttribute('aria-checked', mode === 'zip' ? 'true' : 'false');
+    const isSel = mode === 'zip';
+    mZip.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
+    mZip.setAttribute('aria-checked', isSel ? 'true' : 'false');
+  }
+  if (mPiece) {
+    const isSel = mode === 'piece';
+    mPiece.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
+    mPiece.setAttribute('aria-checked', isSel ? 'true' : 'false');
   }
   if (mHtml) {
-    mHtml.className = `card interactive mode-card ${mode === 'html' ? 'selected' : ''}`;
-    mHtml.setAttribute('aria-checked', mode === 'html' ? 'true' : 'false');
+    const isSel = mode === 'html';
+    mHtml.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
+    mHtml.setAttribute('aria-checked', isSel ? 'true' : 'false');
   }
   if (mImgs) {
-    mImgs.className = `card interactive mode-card ${mode === 'images' ? 'selected' : ''}`;
-    mImgs.setAttribute('aria-checked', mode === 'images' ? 'true' : 'false');
+    const isSel = mode === 'images';
+    mImgs.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
+    mImgs.setAttribute('aria-checked', isSel ? 'true' : 'false');
+  }
+  if (mSite) {
+    const isSel = mode === 'site';
+    mSite.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
+    mSite.setAttribute('aria-checked', isSel ? 'true' : 'false');
   }
 
   updateWebGLNotice();
@@ -1791,20 +2164,23 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
     currentTabUrl = targetTab.url;
     currentTabTitle = targetTab.title || 'Página Web';
 
+    let cleanHost = '';
     try {
-      currentTabOrigin = new URL(currentTabUrl).origin;
+      const parsed = new URL(currentTabUrl);
+      currentTabOrigin = parsed.origin;
+      cleanHost = parsed.hostname.replace(/^www\./, '') || parsed.protocol.replace(':', '');
     } catch {
       currentTabOrigin = '';
     }
 
     const oTitle = document.getElementById('originTitle');
     const oUrl = document.getElementById('originUrl');
-    if (oTitle) oTitle.textContent = currentTabTitle;
+    if (oTitle) oTitle.textContent = cleanHost || currentTabTitle;
     if (oUrl) oUrl.textContent = currentTabUrl;
 
     // CENÁRIO 2: Página de sistema interna (chrome://, edge://, about:, devtools:)
     if (isSystemBrowserPage(currentTabUrl)) {
-      updateSecurityPill(currentTabUrl);
+      updateSecurityPill(currentTabUrl, targetTab.status);
       if (!isBusyState) {
         setState('erro');
       }
@@ -1812,7 +2188,14 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
     }
 
     // CENÁRIO 3: Página web compatível (HTTP, HTTPS, file://)
-    updateSecurityPill(currentTabUrl);
+    updateSecurityPill(currentTabUrl, targetTab.status);
+
+    const popRes = document.getElementById('popover-resolution');
+    if (popRes) {
+      const w = targetTab.width || (typeof window !== 'undefined' ? window.screen?.width || 1440 : 1440);
+      const h = targetTab.height || (typeof window !== 'undefined' ? window.screen?.height || 900 : 900);
+      popRes.textContent = `${w}×${h} PX`;
+    }
 
     if (validateUrl(currentTabUrl, true).valid) {
       if (currentState === 'erro' || currentState === 'sem_acesso') {
@@ -1884,14 +2267,25 @@ export function initSidePanel() {
 
   // Bind Mode Cards
   const mZip = document.getElementById('mode-zip');
+  const mPiece = document.getElementById('mode-piece');
   const mHtml = document.getElementById('mode-html');
   const mImgs = document.getElementById('mode-images');
+  const mSite = document.getElementById('mode-site');
   if (mZip) {
     mZip.onclick = () => selectMode('zip');
     mZip.onkeydown = (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         selectMode('zip');
+      }
+    };
+  }
+  if (mPiece) {
+    mPiece.onclick = () => selectMode('piece');
+    mPiece.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectMode('piece');
       }
     };
   }
@@ -1910,6 +2304,32 @@ export function initSidePanel() {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         selectMode('images');
+      }
+    };
+  }
+  if (mSite) {
+    mSite.onclick = () => selectMode('site');
+    mSite.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectMode('site');
+      }
+    };
+  }
+
+  // Bind Record Clicks Switch (v11)
+  const recSw = document.getElementById('recordClicksSwitch');
+  if (recSw) {
+    let recClicksActive = false;
+    recSw.onclick = () => {
+      recClicksActive = !recClicksActive;
+      recSw.className = recClicksActive ? 'switch-track' : 'switch-track off';
+      recSw.setAttribute('aria-checked', recClicksActive ? 'true' : 'false');
+    };
+    recSw.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        recSw.click();
       }
     };
   }
@@ -1989,6 +2409,7 @@ export function initSidePanel() {
   // Inicializa estado padrão: escopo esta_pagina, modo zip (PADRÃO)
   setScope('esta_pagina');
   selectMode('zip');
+  setupPopoverEvents();
   updateActiveTab();
 }
 
@@ -2006,6 +2427,7 @@ if (typeof document !== 'undefined') {
 if (typeof window !== 'undefined') {
   (window as any).__pluck = {
     setState,
+    resetToInitialState,
     selectMode,
     setScope,
     setLimitPage,

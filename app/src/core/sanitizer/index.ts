@@ -1,3 +1,5 @@
+import { cleanFormValues, cleanAllElementUrlTokens } from '../security/privacy-cleaner';
+
 const CSP_DIRECTIVE =
   "default-src 'none'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 
@@ -7,6 +9,7 @@ export interface SanitizeOptions {
   removePasswordInputs?: boolean;
   removeNonces?: boolean;
   injectCsp?: boolean;
+  cleanPersonalData?: boolean;
 }
 
 /**
@@ -27,7 +30,8 @@ export function sanitizeHtml(html: string, options: SanitizeOptions = {}): strin
     removeHiddenInputs = true,
     removePasswordInputs = true,
     removeNonces = true,
-    injectCsp = true
+    injectCsp = true,
+    cleanPersonalData = true
   } = options;
 
   const parser = new DOMParser();
@@ -123,6 +127,11 @@ export function sanitizeHtml(html: string, options: SanitizeOptions = {}): strin
       'input[name*="csrf" i], input[name*="token" i], input[name*="nonce" i], input[id*="csrf" i]'
     );
     sensitiveInputs.forEach((el) => el.remove());
+  }
+
+  if (cleanPersonalData) {
+    cleanFormValues(doc);
+    cleanAllElementUrlTokens(doc);
   }
 
   // Remove existing base tag

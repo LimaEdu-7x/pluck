@@ -1,4 +1,4 @@
-/* Pluck Design Tokens v4 (DESIGN.md) */
+/* Pluck Design Tokens v11 (ArtCraft P&B Impeccable) */
 :root {
   /* Spacing Scale (Base 4px: 4 · 8 · 12 · 16 · 24 · 32 · 48) */
   --space-1: 4px;
@@ -11,8 +11,8 @@
 
   /* Component Dimensions */
   --header-height: 48px;
-  --footer-height: 64px;
-  --button-primary-height: 44px;
+  --footer-height: 72px;
+  --button-primary-height: 48px;
   --button-secondary-height: 40px;
   --card-mode-height: 64px;
   --tab-scope-height: 36px;
@@ -21,30 +21,41 @@
 
   /* Border Radii */
   --radius-none: 0px;
+  --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-full: 9999px;
 
-  /* Typography */
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: Consolas, "JetBrains Mono", Menlo, Monaco, monospace;
+  /* Typography Hierarchical Levels (v11 OFL Open Fonts) */
+  --font-display: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-special: "Special Elite", "Courier Prime", Consolas, monospace;
+  --font-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Special Elite", Consolas, "JetBrains Mono", Menlo, monospace;
 
-  /* Brand Colors - Dark Theme (Padrão) */
-  --bg: #16181D;
-  --surface: #1D212A;
-  --surface-hover: #222733;
-  --surface-2: #262C38;
-  --border: #2B313D;
-  --border-subtle: #222731;
-  --divider: #262A33;
-  --text: #F4F1EA;
-  --text-muted: #8C93A0;
-  --accent: #FF6B3D;
-  --accent-hover: #E85C2F;
-  --accent-active: #D44F24;
-  --accent-subtle: rgba(255, 107, 61, 0.12);
+  /* Brand Colors - v11 ArtCraft P&B Dark Theme (Principal) */
+  --bg: #121316;
+  --bg-grid: rgba(242, 241, 238, 0.05);
+  --surface: #101014;
+  --surface-hover: #17181E;
+  --surface-2: #191B22;
+  --border: rgba(242, 241, 238, 0.16);
+  --border-subtle: rgba(242, 241, 238, 0.08);
+  --border-focus: #FFFFFF;
+  --divider: rgba(242, 241, 238, 0.12);
+  --text: #F2F1EE;
+  --text-muted: rgba(242, 241, 238, 0.65);
+  --text-subtle: rgba(242, 241, 238, 0.4);
+  
+  /* Accent / Inverted Action Tokens */
+  --accent: #FFFFFF;
+  --accent-contrast: #0B0B0C;
+  --accent-hover: #E2E1DE;
+  --accent-active: #CCCCCC;
+  --accent-subtle: rgba(255, 255, 255, 0.1);
 
+  /* Status Colors (Subtis e não-distrativos) */
   --status-ok: #34D399;
   --status-warn: #F59E0B;
   --status-err: #EF4444;
@@ -59,18 +70,26 @@
   --transition-normal: 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Light Theme */
+/* Light Theme (Preservado para Auditoria e Fallback) */
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #F4F1EA;
+    --bg: #F2F1EE;
+    --bg-grid: rgba(18, 19, 22, 0.04);
     --surface: #FFFFFF;
     --surface-hover: #F8F7F4;
-    --surface-2: #EBE6DC;
-    --border: #DCD7CC;
-    --border-subtle: #E8E3D9;
-    --divider: #E2DED4;
-    --text: #16181D;
-    --text-muted: #636A78;
+    --surface-2: #E8E7E3;
+    --border: rgba(18, 19, 22, 0.16);
+    --border-subtle: rgba(18, 19, 22, 0.08);
+    --border-focus: #121316;
+    --divider: rgba(18, 19, 22, 0.12);
+    --text: #121316;
+    --text-muted: #5C6270;
+    --text-subtle: #8C93A0;
+    --accent: #121316;
+    --accent-contrast: #FFFFFF;
+    --accent-hover: #26282E;
+    --accent-active: #000000;
+    --accent-subtle: rgba(18, 19, 22, 0.08);
     --warn-bg: #FFFBEB;
     --warn-border: #FDE68A;
     --err-bg: #FEF2F2;
@@ -79,15 +98,19 @@
 }
 
 body.theme-light {
-  --bg: #F4F1EA;
+  --bg: #F2F1EE;
+  --bg-grid: rgba(18, 19, 22, 0.04);
   --surface: #FFFFFF;
   --surface-hover: #F8F7F4;
-  --surface-2: #EBE6DC;
-  --border: #DCD7CC;
-  --border-subtle: #E8E3D9;
-  --divider: #E2DED4;
-  --text: #16181D;
-  --text-muted: #636A78;
+  --surface-2: #E8E7E3;
+  --border: rgba(18, 19, 22, 0.16);
+  --border-subtle: rgba(18, 19, 22, 0.08);
+  --divider: rgba(18, 19, 22, 0.12);
+  --text: #121316;
+  --text-muted: #5C6270;
+  --text-subtle: #8C93A0;
+  --accent: #121316;
+  --accent-contrast: #FFFFFF;
   --warn-bg: #FFFBEB;
   --warn-border: #FDE68A;
   --err-bg: #FEF2F2;
@@ -95,15 +118,19 @@ body.theme-light {
 }
 
 body.theme-dark {
-  --bg: #16181D;
-  --surface: #1D212A;
-  --surface-hover: #222733;
-  --surface-2: #262C38;
-  --border: #2B313D;
-  --border-subtle: #222731;
-  --divider: #262A33;
-  --text: #F4F1EA;
-  --text-muted: #8C93A0;
+  --bg: #121316;
+  --bg-grid: rgba(242, 241, 238, 0.05);
+  --surface: #101014;
+  --surface-hover: #17181E;
+  --surface-2: #191B22;
+  --border: rgba(242, 241, 238, 0.16);
+  --border-subtle: rgba(242, 241, 238, 0.08);
+  --divider: rgba(242, 241, 238, 0.12);
+  --text: #F2F1EE;
+  --text-muted: rgba(242, 241, 238, 0.65);
+  --text-subtle: rgba(242, 241, 238, 0.4);
+  --accent: #FFFFFF;
+  --accent-contrast: #0B0B0C;
   --warn-bg: #221C14;
   --warn-border: #573B11;
   --err-bg: #201314;

@@ -26,6 +26,31 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
     window.ga = window.ga || function() {};
   } catch {}
 
+  // [PRIVACIDADE] Isola document.cookie e Web Storage para execução offline limpa sem vazar dados do host
+  try {
+    let _memCookie = '';
+    Object.defineProperty(document, 'cookie', {
+      get: function() { return _memCookie; },
+      set: function(v) { _memCookie = v; },
+      configurable: true
+    });
+    function createMemStorage() {
+      let store = {};
+      return {
+        getItem: function(k) { return (k in store) ? store[k] : null; },
+        setItem: function(k, v) { store[k] = String(v); },
+        removeItem: function(k) { delete store[k]; },
+        clear: function() { store = {}; },
+        key: function(i) { return Object.keys(store)[i] || null; },
+        get length() { return Object.keys(store).length; }
+      };
+    }
+    const _memLocal = createMemStorage();
+    const _memSession = createMemStorage();
+    Object.defineProperty(window, 'localStorage', { get: function() { return _memLocal; }, configurable: true });
+    Object.defineProperty(window, 'sessionStorage', { get: function() { return _memSession; }, configurable: true });
+  } catch {}
+
   function resolveUrl(rawUrl) {
     if (!rawUrl) return rawUrl;
     const urlStr = typeof rawUrl === 'string' ? rawUrl : String(rawUrl);

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createBaixandoRow, createConfigItem } from './ui-helpers';
-import { cleanupResources, isSystemBrowserPage, setState, detectAndRenderExternalDomains, setScope } from './sidepanel';
+import { cleanupResources, isSystemBrowserPage, setState, detectAndRenderExternalDomains, setScope, resetToInitialState, selectMode } from './sidepanel';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -269,6 +269,264 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
 
       // Como o usuário recusou (mockResolvedValue false), o checkbox volta a ser falso
       expect(checkbox!.checked).toBe(false);
+    });
+  });
+
+  describe('Botão Voltar ao Início (Fluxo de Conclusão, Erro e Reinício de Captura)', () => {
+    beforeEach(() => {
+      document.body.innerHTML = `
+        <div id="sidePanelRoot">
+          <header class="panel-header">
+            <div class="domain-pill" id="headerDomainPill">
+              <span class="status-dot" id="domainDot"></span>
+              <span id="domainText">exemplo.com</span>
+            </div>
+            <span id="securityBadge"></span>
+          </header>
+          <section class="view-state active" id="view-inicio">
+            <div class="origin-info">
+              <span class="origin-title" id="originTitle">Artigo de Design</span>
+              <span class="origin-url" id="originUrl">https://exemplo.com/artigo</span>
+            </div>
+            <div class="card interactive mode-card selected" id="mode-zip" role="radio" aria-checked="true"></div>
+            <div class="card interactive mode-card" id="mode-html" role="radio" aria-checked="false"></div>
+            <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false"></div>
+            <div id="webglNotice" style="display: none;"></div>
+          </section>
+          <section class="view-state" id="view-rolando"></section>
+          <section class="view-state" id="view-analisando"></section>
+          <section class="view-state" id="view-baixando"></section>
+          <section class="view-state" id="view-pausado"></section>
+          <section class="view-state" id="view-pronto-zip"></section>
+          <section class="view-state" id="view-pronto-html"></section>
+          <section class="view-state" id="view-erro">
+            <span id="erroTitle"></span>
+            <span id="erroSub"></span>
+            <p id="erroProtocol"></p>
+          </section>
+          <section class="view-state" id="view-sem-acesso"></section>
+          <section class="view-state" id="view-permissao"></section>
+          <section class="view-state" id="view-login"></section>
+          <div id="scrollPct">100% de 5000 px</div>
+          <div id="scrollFill" style="width: 100%;"></div>
+          <div id="scrollStepNote">Rolagem concluída</div>
+          <div id="scrollVerticalPos">5000 px de 5000 px</div>
+          <div id="scrollImagesCount">24 imagens</div>
+          <div id="scrollStepsCount">10 passos</div>
+          <div id="downPct">100% CONCLUÍDO</div>
+          <div id="downFill" style="width: 100%;"></div>
+          <div id="downFile">Finalizado</div>
+          <div id="cntPages">1 de 1</div>
+          <div id="cntRes">24 de 24</div>
+          <div id="cntMb">4,2 MB</div>
+          <div id="cntTime">00:15</div>
+          <footer class="panel-footer" id="panelFooter"></footer>
+        </div>
+      `;
+
+      setScope('esta_pagina');
+      selectMode('zip');
+
+      if ((window as any).__pluck) {
+        (window as any).__pluck.setTargetTab({
+          url: 'https://exemplo.com/artigo',
+          title: 'Artigo de Design',
+          tabId: 42
+        });
+      }
+    });
+
+    it('aparece no rodapé quando a coleta conclui com sucesso (estado pronto no modo ZIP e HTML)', () => {
+      expect(typeof resetToInitialState).toBe('function');
+
+      // 1. Testa modo ZIP
+      selectMode('zip');
+      setState('pronto', { filename: 'artigo.zip', sizeText: '1.2 MB' });
+
+      let backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
+      expect(backBtn).not.toBeNull();
+      expect(backBtn?.textContent).toBe('Voltar ao início');
+      expect(backBtn?.getAttribute('aria-label')).toBe('Voltar ao início');
+      expect(backBtn?.classList.contains('btn-small')).toBe(true);
+      expect(backBtn?.classList.contains('btn-secondary')).toBe(true);
+
+      // 2. Testa modo HTML
+      selectMode('html');
+      setState('pronto', { filename: 'artigo.html', sizeText: '250 KB' });
+
+      backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
+      expect(backBtn).not.toBeNull();
+      expect(backBtn?.textContent).toBe('Voltar ao início');
+      expect(backBtn?.getAttribute('aria-label')).toBe('Voltar ao início');
+    });
+
+    it('aparece no rodapé quando a coleta termina em erro', () => {
+      setState('erro', {
+        errorTitle: 'Falha na Captura',
+        errorDetail: 'Timeout de rede',
+        url: 'https://exemplo.com/artigo'
+      });
+
+      const backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
+      expect(backBtn).not.toBeNull();
+      expect(backBtn?.textContent).toBe('Voltar ao início');
+      expect(backBtn?.getAttribute('aria-label')).toBe('Voltar ao início');
+      expect(backBtn?.classList.contains('btn-small')).toBe(true);
+      expect(backBtn?.classList.contains('btn-secondary')).toBe(true);
+    });
+
+    it('ao clicar em Voltar ao Início, reseta o estado e o progresso para inicio mantendo a aba/URL ativa', () => {
+      selectMode('zip');
+      setState('pronto', { filename: 'artigo.zip', sizeText: '1.2 MB' });
+      expect(document.getElementById('view-inicio')?.classList.contains('active')).toBe(false);
+      expect(document.getElementById('view-pronto-zip')?.classList.contains('active')).toBe(true);
+
+      const backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
+      expect(backBtn).not.toBeNull();
+
+      // Clica no botão Voltar ao início
+      backBtn.click();
+
+      // 1. Volta para o estado inicial
+      expect(document.getElementById('view-inicio')?.classList.contains('active')).toBe(true);
+      expect(document.getElementById('view-pronto-zip')?.classList.contains('active')).toBe(false);
+
+      // 2. Limpa dados de progresso no DOM
+      expect(document.getElementById('scrollPct')?.textContent).toBe('0 de 0 px (0%)');
+      expect(document.getElementById('scrollFill')?.style.width).toBe('0%');
+      expect(document.getElementById('downPct')?.textContent).toBe('0% CONCLUÍDO');
+      expect(document.getElementById('downFill')?.style.width).toBe('0%');
+
+      // 3. Mantém a identificação e URL da aba ativa
+      expect(document.getElementById('originTitle')?.textContent).toBe('Artigo de Design');
+      expect(document.getElementById('originUrl')?.textContent).toBe('https://exemplo.com/artigo');
+      expect(document.getElementById('domainText')?.textContent).toBe('exemplo.com');
+
+      // 4. O botão Voltar ao início não deve estar visível no estado inicial
+      expect(document.getElementById('btnBackToStart')).toBeNull();
+      // O botão principal da tela inicial volta a aparecer
+      const mainBtn = document.getElementById('btnMainAction');
+      expect(mainBtn).not.toBeNull();
+      expect(mainBtn?.textContent?.includes('Começar a arquivar') || mainBtn?.textContent?.includes('Baixar Página Completa')).toBe(true);
+    });
+
+    it('uma nova captura funciona normalmente após voltar ao início', async () => {
+      // 1. Simula conclusão prévia de um download
+      selectMode('zip');
+      setState('pronto', { filename: 'artigo.zip' });
+
+      const backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
+      expect(backBtn).not.toBeNull();
+      backBtn.click();
+
+      // 2. O usuário agora escolhe o modo imagens
+      selectMode('images');
+      expect(document.getElementById('mode-images')?.classList.contains('selected')).toBe(true);
+
+      const mainBtn = document.getElementById('btnMainAction') as HTMLButtonElement;
+      expect(mainBtn).not.toBeNull();
+      expect(mainBtn?.textContent?.includes('Baixar Galeria de Mídias') || mainBtn?.textContent?.includes('Baixar somente imagens')).toBe(true);
+
+      // Configura HTML mock para captura limpa
+      (window as any).__pluck.setTargetTab({
+        url: 'https://exemplo.com/artigo',
+        title: 'Artigo de Design',
+        html: '<html><head><title>Design</title></head><body><img src="https://exemplo.com/foto.png"></body></html>',
+        tabId: 42
+      });
+
+      // 3. Dispara a nova captura pelo botão principal
+      mainBtn.click();
+
+      // A captura deve iniciar sem estar bloqueada ou presa
+      const state = (window as any).__pluck.getState();
+      expect(state === 'rolando' || state === 'baixando' || state === 'inicio').toBe(true);
+    });
+  });
+
+  describe('Pluck v11.1: Bolinha de Status, Popover Técnico e Cartão de Salvamento', () => {
+    beforeEach(() => {
+      document.body.innerHTML = `
+        <div id="sidePanelRoot">
+          <header class="panel-header">
+            <div class="site-chip-container">
+              <button class="site-chip domain-pill" id="headerDomainPill" type="button" aria-haspopup="dialog" aria-expanded="false">
+                <div class="pulse-wrapper">
+                  <div id="domainRing" class="ring-pulse-green"></div>
+                  <div id="domainDot" class="status-dot dot-core-green"></div>
+                </div>
+                <span id="domainText" class="domain-label">aguardando...</span>
+              </button>
+              <div id="site-popover" class="site-popover" hidden>
+                <span id="popover-status-text"></span>
+                <span id="popover-full-url"></span>
+                <span id="popover-resolution"></span>
+                <span id="popover-assets-status"></span>
+                <button id="btn-switch-tab" type="button">Trocar de aba ativa</button>
+              </div>
+            </div>
+            <span id="securityBadge"></span>
+          </header>
+          <section class="view-state active" id="view-inicio">
+            <h1 id="originTitle">getartcraft.com</h1>
+            <div id="saveFolderCard">
+              <div id="saveFolderPath">Downloads / getartcraft.com.zip</div>
+              <div class="save-folder-tips">
+                <span>Como abrir</span>
+                <span>Proteção de dados: senhas, logins digitados e dados de formulários são apagados antes de salvar o arquivo.</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      `;
+    });
+
+    it('aplica estado VERDE com pulso (dot-core-green e ring-pulse-green) para site HTTPS conectado', () => {
+      (window as any).__pluck.setTargetTab({
+        url: 'https://getartcraft.com/',
+        title: 'ArtCraft - Open Source Tools',
+        tabId: 1
+      });
+
+      const dot = document.getElementById('domainDot');
+      const ring = document.getElementById('domainRing');
+      const text = document.getElementById('domainText');
+      const popStatus = document.getElementById('popover-status-text');
+
+      expect(dot?.classList.contains('dot-core-green')).toBe(true);
+      expect(ring?.classList.contains('ring-pulse-green')).toBe(true);
+      expect(text?.textContent).toBe('getartcraft.com');
+      expect(popStatus?.textContent).toContain('CONECTADO À ABA');
+    });
+
+    it('aplica estado VERMELHO estático (dot-core-red e ring-static-red) para páginas restritas de sistema', () => {
+      (window as any).__pluck.setTargetTab({
+        url: 'chrome://settings',
+        title: 'Configurações do Chrome',
+        tabId: 2
+      });
+
+      const dot = document.getElementById('domainDot');
+      const ring = document.getElementById('domainRing');
+      const popStatus = document.getElementById('popover-status-text');
+
+      expect(dot?.classList.contains('dot-core-red')).toBe(true);
+      expect(ring?.classList.contains('ring-static-red')).toBe(true);
+      expect(popStatus?.textContent).toContain('PÁGINA RESTRITA');
+    });
+
+    it('o cartão de salvamento exibe o destino em Downloads e a orientação de como abrir com proteção de dados', () => {
+      (window as any).__pluck.setTargetTab({
+        url: 'https://getartcraft.com/',
+        title: 'ArtCraft'
+      });
+
+      const pathEl = document.getElementById('saveFolderPath');
+      expect(pathEl?.textContent).toBe('Downloads / getartcraft.com.zip');
+
+      const card = document.getElementById('saveFolderCard');
+      expect(card?.textContent).toContain('Como abrir');
+      expect(card?.textContent).toContain('Proteção de dados: senhas, logins digitados e dados de formulários são apagados antes de salvar o arquivo.');
     });
   });
 });
