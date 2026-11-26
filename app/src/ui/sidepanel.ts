@@ -49,6 +49,7 @@ export function setScrollLimitChoice(val: '10' | '30' | 'unlimited') {
     const isSelected = key === val;
     el.className = isSelected ? 'card interactive mode-card selected' : 'card interactive mode-card';
     el.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+    el.tabIndex = isSelected ? 0 : -1;
     const radio = el.querySelector('.radio-circle');
     if (radio) {
       if (isSelected) {
@@ -69,6 +70,8 @@ export function setScrollLimitChoice(val: '10' | '30' | 'unlimited') {
       (val === '30' && chipVal === '30') ||
       (val === 'unlimited' && (chipVal === '999' || chipVal === 'unlimited'));
     chip.classList.toggle('active', isChipActive);
+    chip.setAttribute('aria-checked', isChipActive ? 'true' : 'false');
+    (chip as HTMLElement).tabIndex = isChipActive ? 0 : -1;
   });
 }
 
@@ -214,7 +217,13 @@ export function resetToInitialState() {
   const downPct = document.getElementById('downPct');
   if (downPct) downPct.textContent = '0% CONCLUÍDO';
   const downFill = document.getElementById('downFill');
-  if (downFill) downFill.style.width = '0%';
+  if (downFill) {
+    downFill.style.width = '0%';
+    downFill.classList.remove('complete');
+  }
+  const downProgressbar = document.getElementById('downProgressbar');
+  if (downProgressbar) downProgressbar.setAttribute('aria-valuenow', '0');
+  lastAnnouncedMilestone = -1;
   const downFile = document.getElementById('downFile');
   if (downFile) downFile.textContent = 'Iniciando captura de recursos...';
   const cntPages = document.getElementById('cntPages');
@@ -333,7 +342,13 @@ function updateSecurityPill(url: string, tabStatus?: string) {
 
   if (popUrl) popUrl.textContent = url || '—';
 
+  const isBusyState = currentState === 'baixando' || currentState === 'rolando' || currentState === 'analisando' || currentState === 'pronto';
+
   if (!url || url === 'null' || url === 'undefined') {
+    if (isBusyState) {
+      // Regra do Sinal / DESIGN.md: O chip do topo mantém o domínio sendo capturado, nunca "Sem página" no meio da captura
+      return;
+    }
     pill.className = 'site-chip domain-pill muted';
     dot.className = 'status-dot dot-core-red err';
     if (ring) ring.className = 'ring-static-red';
@@ -551,6 +566,40 @@ export function setupPopoverEvents() {
 // --------------------------------------------------------------------------
 // MÁQUINA DE ESTADOS DA UI v4
 // --------------------------------------------------------------------------
+let lastAnnouncedMilestone = -1;
+
+export function announceProgressMilestone(pct: number, customText?: string) {
+  const milestoneEl = document.getElementById('downMilestoneAnnounce');
+  if (!milestoneEl) return;
+
+  if (pct === 0) {
+    if (lastAnnouncedMilestone !== 0) {
+      lastAnnouncedMilestone = 0;
+      milestoneEl.textContent = customText || 'Iniciando captura';
+    }
+    return;
+  }
+
+  if (pct >= 100) {
+    if (lastAnnouncedMilestone < 100) {
+      lastAnnouncedMilestone = 100;
+      milestoneEl.textContent = customText || 'Captura concluída';
+    }
+    return;
+  }
+
+  const milestones = [75, 50, 25];
+  for (const m of milestones) {
+    if (pct >= m) {
+      if (lastAnnouncedMilestone < m) {
+        lastAnnouncedMilestone = m;
+        milestoneEl.textContent = `${m}% concluído`;
+      }
+      break;
+    }
+  }
+}
+
 export function setState(state: UiState, data?: any) {
   currentState = state;
 
@@ -767,7 +816,15 @@ function populateStateData(state: UiState, data?: any) {
 
       const pct = data.pct || 0;
       if (downPct) downPct.textContent = `${pct}% CONCLUÍDO`;
-      if (downFill) downFill.style.width = pct + '%';
+      if (downFill) {
+        downFill.style.width = pct + '%';
+        downFill.classList.toggle('complete', pct >= 100);
+      }
+      const downProgressbar = document.getElementById('downProgressbar');
+      if (downProgressbar) {
+        downProgressbar.setAttribute('aria-valuenow', String(pct));
+      }
+      announceProgressMilestone(pct);
       if (downFile && data.currentItem) downFile.textContent = `Processando: ${data.currentItem}`;
       if (cntPages) {
         const pagesCur = data.pagesDone || 1;
@@ -1196,7 +1253,6 @@ function renderFooterActions(_data?: any) {
 
     const stopBadge = document.createElement('span');
     stopBadge.className = 'type-special';
-    stopBadge.style.fontSize = '10.5px';
     stopBadge.style.border = '1px solid #0B0B0C';
     stopBadge.style.padding = '2px 5px';
     stopBadge.style.borderRadius = '2px';
@@ -1735,26 +1791,31 @@ export function selectMode(mode: UiMode | 'piece' | 'site') {
     const isSel = mode === 'zip';
     mZip.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
     mZip.setAttribute('aria-checked', isSel ? 'true' : 'false');
+    mZip.tabIndex = isSel ? 0 : -1;
   }
   if (mPiece) {
     const isSel = mode === 'piece';
     mPiece.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
     mPiece.setAttribute('aria-checked', isSel ? 'true' : 'false');
+    mPiece.tabIndex = isSel ? 0 : -1;
   }
   if (mHtml) {
     const isSel = mode === 'html';
     mHtml.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
     mHtml.setAttribute('aria-checked', isSel ? 'true' : 'false');
+    mHtml.tabIndex = isSel ? 0 : -1;
   }
   if (mImgs) {
     const isSel = mode === 'images';
     mImgs.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
     mImgs.setAttribute('aria-checked', isSel ? 'true' : 'false');
+    mImgs.tabIndex = isSel ? 0 : -1;
   }
   if (mSite) {
     const isSel = mode === 'site';
     mSite.className = `card interactive mode-card ${isSel ? 'selected' : ''}`;
     mSite.setAttribute('aria-checked', isSel ? 'true' : 'false');
+    mSite.tabIndex = isSel ? 0 : -1;
   }
 
   updateWebGLNotice();
@@ -2884,6 +2945,9 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
     const isBusyState = currentState === 'baixando' || currentState === 'rolando' || currentState === 'analisando' || currentState === 'pronto';
 
     if (!targetTab) {
+      if (isBusyState) {
+        return;
+      }
       currentTabId = null;
       currentTabUrl = '';
       currentTabTitle = 'Nenhuma aba ativa';
@@ -2892,9 +2956,7 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
       if (oTitle) oTitle.textContent = currentTabTitle;
       if (oUrl) oUrl.textContent = '—';
       updateSecurityPillForHiddenUrl();
-      if (!isBusyState) {
-        setState('sem_acesso');
-      }
+      setState('sem_acesso');
       return;
     }
 
@@ -2902,6 +2964,9 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
 
     // CENÁRIO 1: O navegador ocultou a URL da aba (falta de permissão 'tabs' ou aba restrita)
     if (!targetTab.url) {
+      if (isBusyState) {
+        return;
+      }
       currentTabUrl = '';
       currentTabTitle = targetTab.title || 'Aba ativa (identificação oculta)';
       currentTabOrigin = '';
@@ -2910,9 +2975,7 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
       if (oTitle) oTitle.textContent = currentTabTitle;
       if (oUrl) oUrl.textContent = 'URL oculta pelo navegador · Permissão necessária';
       updateSecurityPillForHiddenUrl();
-      if (!isBusyState) {
-        setState('sem_acesso');
-      }
+      setState('sem_acesso');
       return;
     }
 
@@ -3131,9 +3194,11 @@ export function initSidePanel() {
       sitePages.forEach((x) => {
         x.classList.remove('active');
         x.setAttribute('aria-checked', 'false');
+        (x as HTMLElement).tabIndex = -1;
       });
       c.classList.add('active');
       c.setAttribute('aria-checked', 'true');
+      (c as HTMLElement).tabIndex = 0;
       const val = parseInt(c.getAttribute('data-val') || '20', 10);
       setLimitPage(val);
     };
@@ -3152,9 +3217,11 @@ export function initSidePanel() {
       siteDepth.forEach((x) => {
         x.classList.remove('active');
         x.setAttribute('aria-checked', 'false');
+        (x as HTMLElement).tabIndex = -1;
       });
       c.classList.add('active');
       c.setAttribute('aria-checked', 'true');
+      (c as HTMLElement).tabIndex = 0;
       const raw = c.getAttribute('data-val');
       limitDepth = raw === '999' ? Infinity : parseInt(raw || '2', 10);
     };
@@ -3208,17 +3275,43 @@ export function initSidePanel() {
 
   const mCounts = document.querySelectorAll('#mediaCountChips .chip-option');
   mCounts.forEach((c) => {
-    (c as HTMLElement).onclick = () => {
-      mCounts.forEach((x) => x.classList.remove('active'));
+    const handleSelect = () => {
+      mCounts.forEach((x) => {
+        x.classList.remove('active');
+        x.setAttribute('aria-checked', 'false');
+        (x as HTMLElement).tabIndex = -1;
+      });
       c.classList.add('active');
+      c.setAttribute('aria-checked', 'true');
+      (c as HTMLElement).tabIndex = 0;
+    };
+    (c as HTMLElement).onclick = handleSelect;
+    (c as HTMLElement).onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
     };
   });
 
   const mSizes = document.querySelectorAll('#mediaSizeChips .chip-option');
   mSizes.forEach((c) => {
-    (c as HTMLElement).onclick = () => {
-      mSizes.forEach((x) => x.classList.remove('active'));
+    const handleSelect = () => {
+      mSizes.forEach((x) => {
+        x.classList.remove('active');
+        x.setAttribute('aria-checked', 'false');
+        (x as HTMLElement).tabIndex = -1;
+      });
       c.classList.add('active');
+      c.setAttribute('aria-checked', 'true');
+      (c as HTMLElement).tabIndex = 0;
+    };
+    (c as HTMLElement).onclick = handleSelect;
+    (c as HTMLElement).onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
     };
   });
 
@@ -3298,10 +3391,12 @@ export function initSidePanel() {
     if (optAuto) {
       optAuto.classList.add('selected');
       optAuto.setAttribute('aria-checked', 'true');
+      optAuto.tabIndex = 0;
     }
     if (optRec) {
       optRec.classList.remove('selected');
       optRec.setAttribute('aria-checked', 'false');
+      optRec.tabIndex = -1;
     }
     if (currentState === 'inicio') renderFooterActions();
   };
@@ -3328,10 +3423,12 @@ export function initSidePanel() {
     if (optRec) {
       optRec.classList.add('selected');
       optRec.setAttribute('aria-checked', 'true');
+      optRec.tabIndex = 0;
     }
     if (optAuto) {
       optAuto.classList.remove('selected');
       optAuto.setAttribute('aria-checked', 'false');
+      optAuto.tabIndex = -1;
     }
     setScope('esta_pagina');
     if (currentState === 'inicio') renderFooterActions();
@@ -3412,8 +3509,14 @@ export function initSidePanel() {
         } else if (keyEv.key === 'ArrowUp' || keyEv.key === 'ArrowLeft') {
           nextIndex = (focusedIndex - 1 + items.length) % items.length;
         }
-        items[nextIndex]?.focus();
-        items[nextIndex]?.click();
+        const target = items[nextIndex];
+        if (target) {
+          items.forEach((item) => {
+            item.tabIndex = item === target ? 0 : -1;
+          });
+          target.focus();
+          target.click();
+        }
       }
     });
   }
@@ -3422,7 +3525,10 @@ export function initSidePanel() {
   setupRadioArrowNav('.capture-mode-container', '.capture-option-row');
   setupRadioArrowNav('#sitePagesChips', '.chip-option');
   setupRadioArrowNav('#siteDepthChips', '.chip-option');
-  setupRadioArrowNav('#subview-opcoes-rolando', '.mode-card');
+  setupRadioArrowNav('#mediaCountChips', '.chip-option');
+  setupRadioArrowNav('#mediaSizeChips', '.chip-option');
+  setupRadioArrowNav('#subview-opcoes-rolagem', '.mode-card');
+  setupRadioArrowNav('#scrollLimitChips', '.chip-option');
 
   // Bind Autoscroll Switch
   if (autoSw) {

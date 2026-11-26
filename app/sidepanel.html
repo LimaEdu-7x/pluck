@@ -65,7 +65,7 @@
           </div>
 
           <!-- 2. Só HTML -->
-          <div class="card interactive mode-card" id="mode-html" role="radio" aria-checked="false" tabindex="0">
+          <div class="card interactive mode-card" id="mode-html" role="radio" aria-checked="false" tabindex="-1">
             <div class="mode-header">
               <div class="mode-left">
                 <span class="mode-radio"></span>
@@ -77,27 +77,31 @@
           </div>
 
           <!-- 3. Site inteiro -->
-          <div class="card interactive mode-card" id="mode-site" role="radio" aria-checked="false" tabindex="0">
-            <div class="mode-header">
-              <div class="mode-left">
-                <span class="mode-radio"></span>
-                <span class="mode-title">Site inteiro</span>
+          <div class="mode-card-wrapper" style="position: relative;">
+            <div class="card interactive mode-card" id="mode-site" role="radio" aria-checked="false" tabindex="-1">
+              <div class="mode-header">
+                <div class="mode-left">
+                  <span class="mode-radio"></span>
+                  <span class="mode-title">Site inteiro</span>
+                </div>
               </div>
-              <span class="mode-badge action-badge" id="btnConfigSite" role="button" tabindex="0" aria-label="Opções do site inteiro">OPÇÕES →</span>
+              <p class="mode-desc">Segue links internos do site (padrão: até 20 páginas em 2 níveis).</p>
             </div>
-            <p class="mode-desc">Segue links internos do site (padrão: até 20 páginas em 2 níveis).</p>
+            <button type="button" class="mode-badge action-badge" id="btnConfigSite" aria-label="Opções do site inteiro" style="position: absolute; top: 12px; right: 14px; z-index: 3;">OPÇÕES →</button>
           </div>
 
           <!-- 4. Somente mídias -->
-          <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="0">
-            <div class="mode-header">
-              <div class="mode-left">
-                <span class="mode-radio"></span>
-                <span class="mode-title">Somente mídias</span>
+          <div class="mode-card-wrapper" style="position: relative;">
+            <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="-1">
+              <div class="mode-header">
+                <div class="mode-left">
+                  <span class="mode-radio"></span>
+                  <span class="mode-title">Somente mídias</span>
+                </div>
               </div>
-              <span class="mode-badge action-badge" id="btnConfigMidias" role="button" tabindex="0" aria-label="Filtros de mídias">FILTROS →</span>
+              <p class="mode-desc">Imagens, vídeos, áudios e vetores SVG em pastas separadas.</p>
             </div>
-            <p class="mode-desc">Imagens, vídeos, áudios e vetores SVG em pastas separadas.</p>
+            <button type="button" class="mode-badge action-badge" id="btnConfigMidias" aria-label="Filtros de mídias" style="position: absolute; top: 12px; right: 14px; z-index: 3;">FILTROS →</button>
           </div>
 
           <div id="webglNotice" class="webgl-notice" role="status" style="display: none;">
@@ -123,7 +127,7 @@
 
           <div class="divider"></div>
 
-          <div class="capture-option-row" id="optRecRow" tabindex="0" role="radio" aria-checked="false">
+          <div class="capture-option-row" id="optRecRow" tabindex="-1" role="radio" aria-checked="false">
             <div class="radio-circle" id="recRadioCircle"></div>
             <div class="option-content">
               <div class="option-header">
@@ -158,11 +162,11 @@
       <!-- 2. TELA OPÇÕES (v12) -->
       <section class="view-state" id="view-opcoes" aria-label="Opções de Captura">
         <button type="button" class="btn-ghost-back" id="btnBackFromOptions" aria-label="Voltar ao início">
-          <svg class="tabler-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12l-14 0" /><path d="M11 18l-6 -6" /><path d="M11 6l6 6" /></svg>
+          <svg class="tabler-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12l-14 0" /><path d="M11 18l-6 -6" /><path d="M11 6l-6 6" /></svg>
           <span>Voltar ao Início</span>
         </button>
         <div style="margin-bottom: 12px; position: relative; z-index: 2;">
-          <div class="type-special" id="optionsDetectedBadge" style="font-size: 10.5px; color: #3ECF8E; margin-bottom: 3px; display: none;">+ DETECTADO NA PÁGINA</div>
+          <div class="type-special badge-green" id="optionsDetectedBadge" style="margin-bottom: 3px; display: none;">+ DETECTADO NA PÁGINA</div>
           <h2 class="title-display" id="optionsViewTitle" style="margin-bottom: 3px;">Opções de Site inteiro</h2>
           <p class="desc-text" id="optionsViewSub">Defina os limites de navegação para varrer as páginas internas.</p>
         </div>
@@ -207,7 +211,7 @@
               <label class="media-card active" id="mediaCardImg">
                 <input type="checkbox" id="mediaCheckImg" checked class="sr-only">
                 <div class="media-info">
-                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
                   <div>
                     <div class="act-title">Imagens</div>
                     <div class="media-sub">PNG, JPG, WebP, GIF, AVIF</div>
@@ -219,7 +223,7 @@
               <label class="media-card active" id="mediaCardSvg">
                 <input type="checkbox" id="mediaCheckSvg" checked class="sr-only">
                 <div class="media-info">
-                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
                   <div>
                     <div class="act-title">Vetores SVG</div>
                     <div class="media-sub">Ícones e ilustrações limpos</div>
@@ -231,7 +235,7 @@
               <label class="media-card active" id="mediaCardVid">
                 <input type="checkbox" id="mediaCheckVid" checked class="sr-only">
                 <div class="media-info">
-                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
                   <div>
                     <div class="act-title">Vídeos</div>
                     <div class="media-sub">MP4, WebM (sem DRM)</div>
@@ -243,7 +247,7 @@
               <label class="media-card active" id="mediaCardAud">
                 <input type="checkbox" id="mediaCheckAud" checked class="sr-only">
                 <div class="media-info">
-                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
                   <div>
                     <div class="act-title">Áudios</div>
                     <div class="media-sub">MP3, WAV, OGG, M4A</div>
@@ -256,27 +260,27 @@
 
           <div class="card options-card">
             <span class="options-group-title">QUANTIDADE MÁXIMA</span>
-            <div class="chips-selector" id="mediaCountChips">
-              <span class="chip-option" data-val="50">50</span>
-              <span class="chip-option" data-val="100">100</span>
-              <span class="chip-option active" data-val="200">200 mídias</span>
-              <span class="chip-option" data-val="999">Sem limite</span>
+            <div class="chips-selector" id="mediaCountChips" role="radiogroup" aria-label="Quantidade máxima de mídias">
+              <button type="button" class="chip-option" data-val="50" role="radio" aria-checked="false" tabindex="-1">50</button>
+              <button type="button" class="chip-option" data-val="100" role="radio" aria-checked="false" tabindex="-1">100</button>
+              <button type="button" class="chip-option active" data-val="200" role="radio" aria-checked="true" tabindex="0">200 mídias</button>
+              <button type="button" class="chip-option" data-val="999" role="radio" aria-checked="false" tabindex="-1">Sem limite</button>
             </div>
           </div>
 
           <div class="card options-card">
             <span class="options-group-title">TAMANHO MÁXIMO POR ARQUIVO</span>
-            <div class="chips-selector" id="mediaSizeChips">
-              <span class="chip-option" data-val="10">10 MB</span>
-              <span class="chip-option" data-val="25">25 MB</span>
-              <span class="chip-option active" data-val="50">50 MB</span>
-              <span class="chip-option" data-val="999">Sem limite</span>
+            <div class="chips-selector" id="mediaSizeChips" role="radiogroup" aria-label="Tamanho máximo por arquivo">
+              <button type="button" class="chip-option" data-val="10" role="radio" aria-checked="false" tabindex="-1">10 MB</button>
+              <button type="button" class="chip-option" data-val="25" role="radio" aria-checked="false" tabindex="-1">25 MB</button>
+              <button type="button" class="chip-option active" data-val="50" role="radio" aria-checked="true" tabindex="0">50 MB</button>
+              <button type="button" class="chip-option" data-val="999" role="radio" aria-checked="false" tabindex="-1">Sem limite</button>
             </div>
           </div>
         </div>
 
         <!-- 2.3 Subview Opções de Rolagem Infinita -->
-        <div class="options-subview" id="subview-opcoes-rolagem" style="display: none; flex-direction: column; gap: 7px; margin-bottom: 12px; position: relative; z-index: 2;">
+        <div class="options-subview" id="subview-opcoes-rolagem" role="radiogroup" aria-label="Opções de rolagem" style="display: none; flex-direction: column; gap: 7px; margin-bottom: 12px; position: relative; z-index: 2;">
           <div class="card interactive mode-card selected" id="scrollCardScreens" data-val="10" role="radio" aria-checked="true" tabindex="0">
             <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; width: 100%;">
               <div style="display: flex; align-items: flex-start; gap: 8px;">
@@ -290,7 +294,7 @@
             </div>
           </div>
 
-          <div class="card interactive mode-card" id="scrollCardTime" data-val="30" role="radio" aria-checked="false" tabindex="0">
+          <div class="card interactive mode-card" id="scrollCardTime" data-val="30" role="radio" aria-checked="false" tabindex="-1">
             <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%;">
               <div class="radio-circle" style="margin-top: 2px;"></div>
               <div>
@@ -300,7 +304,7 @@
             </div>
           </div>
 
-          <div class="card interactive mode-card" id="scrollCardUnlimited" data-val="999" role="radio" aria-checked="false" tabindex="0">
+          <div class="card interactive mode-card" id="scrollCardUnlimited" data-val="999" role="radio" aria-checked="false" tabindex="-1">
             <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%;">
               <div class="radio-circle" style="margin-top: 2px;"></div>
               <div>
@@ -311,9 +315,9 @@
           </div>
 
           <div class="chips-selector sr-only" id="scrollLimitChips" role="radiogroup" aria-label="Limite de rolagem">
-            <button type="button" class="chip-option active" data-val="10" role="radio" aria-checked="true">10 telas</button>
-            <button type="button" class="chip-option" data-val="30" role="radio" aria-checked="false">30s</button>
-            <button type="button" class="chip-option" data-val="999" role="radio" aria-checked="false">Sem limite</button>
+            <button type="button" class="chip-option active" data-val="10" role="radio" aria-checked="true" tabindex="0">10 telas</button>
+            <button type="button" class="chip-option" data-val="30" role="radio" aria-checked="false" tabindex="-1">30s</button>
+            <button type="button" class="chip-option" data-val="999" role="radio" aria-checked="false" tabindex="-1">Sem limite</button>
           </div>
         </div>
 
@@ -325,11 +329,12 @@
       <!-- 3. TELA PROGRESSO / BAIXANDO (v12) -->
       <section class="view-state" id="view-baixando" aria-label="Progresso da Captura">
         <div class="progress-hero">
-          <span class="progress-pct-huge" id="downPct" aria-live="polite">0%</span>
-          <span class="progress-status-sub" id="downFile" aria-live="polite">Iniciando captura...</span>
+          <span class="progress-pct-huge" id="downPct">0%</span>
+          <span class="progress-status-sub" id="downFile">Iniciando captura...</span>
         </div>
+        <div id="downMilestoneAnnounce" class="sr-only" aria-live="polite"></div>
 
-        <div class="progress-bar-wrap">
+        <div class="progress-bar-wrap" role="progressbar" id="downProgressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso da captura">
           <div class="progress-bar-fill" id="downFill" style="width: 0%;"></div>
         </div>
 
@@ -424,7 +429,7 @@
               <div class="ring-pulse-red"></div>
               <div class="dot-core-red"></div>
             </div>
-            <span class="type-special" style="font-size: 10.5px; color: #EF4444; letter-spacing: 0.08em;">GRAVAÇÃO ATIVA NA PÁGINA</span>
+            <span class="type-special" style="font-size: 11px; color: #EF4444; letter-spacing: 0.08em;">GRAVAÇÃO ATIVA NA PÁGINA</span>
           </div>
           <h1 class="title-display" style="margin-bottom: 3px;">Interaja com a página</h1>
           <p class="desc-text">Navegue normalmente. Abra menus, clique em abas e interaja.</p>
@@ -435,7 +440,7 @@
           <div class="type-special" style="font-size: 11px; color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 5px;">
             TEMPO GRAVADO
           </div>
-          <div class="type-special" style="font-size: 36px; font-weight: 700; color: #FFFFFF; line-height: 1;" id="gravandoTimer" aria-live="polite">
+          <div class="type-special" style="font-size: 36px; font-weight: 700; color: #FFFFFF; line-height: 1;" id="gravandoTimer">
             00:00
           </div>
           <div style="font-size: 12.5px; color: #A2A19D; margin-top: 8px;" id="gravandoInteracoes">
@@ -469,7 +474,7 @@
           </div>
           <div id="gravacaoErroPreservadaBox" style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px; display: none;">
             <div class="type-special" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Gravação preservada:</div>
-            <div class="type-special" style="font-size: 12.5px; color: #3ECF8E; margin-top: 1px;" id="gravacaoErroPreservada">
+            <div style="font-family: var(--font-body); font-size: 12.5px; color: var(--text-primary); margin-top: 1px;" id="gravacaoErroPreservada">
             </div>
           </div>
         </div>
@@ -494,7 +499,7 @@
         <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid #FFFFFF; position: relative; z-index: 2; margin-bottom: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
             <span class="act-title" id="prontoZipFilename">site.zip</span>
-            <span class="type-special" style="font-size: 11px; color: #3ECF8E;" id="prontoZipBadge">CÓPIA FIEL</span>
+            <span class="type-special" style="font-size: 11px; color: var(--text-muted);" id="prontoZipBadge">CÓPIA FIEL</span>
           </div>
           
           <div style="font-size: 12.5px; color: #A2A19D; line-height: 1.35; margin-bottom: 8px;" id="prontoZipExpl">
