@@ -535,8 +535,8 @@ input[type="checkbox"]:focus-visible {
 }
 
 .mode-badge.recommended {
-  color: var(--status-ready);
-  border-color: rgba(62, 207, 142, 0.35);
+  color: var(--text-muted);
+  border-color: var(--border-divider);
 }
 
 .mode-badge.action-badge {
@@ -677,8 +677,13 @@ input[type="checkbox"]:focus-visible {
 }
 
 .badge-green {
-  color: var(--status-ready);
-  border: 1px solid rgba(62, 207, 142, 0.35);
+  color: var(--text-muted);
+  border: 1px solid var(--border-divider);
+}
+
+.options-detected-badge {
+  margin-bottom: 3px;
+  display: none;
 }
 
 .badge-subtle {
@@ -696,7 +701,7 @@ input[type="checkbox"]:focus-visible {
 .switch-track {
   width: 32px;
   height: 18px;
-  background: #3ECF8E;
+  background: #FFFFFF;
   border-radius: 9999px;
   position: relative;
   cursor: pointer;
@@ -706,7 +711,7 @@ input[type="checkbox"]:focus-visible {
 }
 
 .switch-track:hover {
-  filter: brightness(1.1);
+  filter: brightness(0.9);
 }
 
 .switch-track:active {
@@ -722,19 +727,24 @@ input[type="checkbox"]:focus-visible {
   background: #2C2D35;
 }
 
+.switch-track.off:hover {
+  filter: brightness(1.15);
+}
+
 .switch-knob {
   width: 14px;
   height: 14px;
-  background: #FFFFFF;
+  background: #0B0B0C;
   border-radius: 50%;
   position: absolute;
   top: 2px;
   left: 16px;
-  transition: left 150ms ease;
+  transition: left 150ms ease, background 150ms ease;
 }
 
 .switch-track.off .switch-knob {
   left: 2px;
+  background: #FFFFFF;
 }
 
 /* 2. TELA OPÇÕES */

@@ -120,6 +120,10 @@ let inMemoryArchivedFile: { filename: string; blob: Blob; base64: string } | nul
 let detectedExternalDomains: string[] = [];
 let confirmedExternalDomains = new Set<string>();
 
+function isActionKey(e: KeyboardEvent): boolean {
+  return e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space';
+}
+
 // Controle de execução e cancelamento/pausa
 let skipAutoscrollRequested = false;
 let requestSkipCurrentRequested = false;
@@ -665,6 +669,11 @@ export function setState(state: UiState, data?: any) {
       subEl.textContent = sub === 'site'
         ? 'Defina os limites de navegação para varrer as páginas internas.'
         : (sub === 'midias' ? 'Escolha os tipos de arquivos e limites para o ZIP.' : 'Esta página carrega novos itens continuamente conforme você rola para baixo.');
+    }
+    const siteSubSw = document.getElementById('siteSubdomainsSwitch');
+    if (siteSubSw) {
+      siteSubSw.className = includeSubdomains ? 'switch-track' : 'switch-track off';
+      siteSubSw.setAttribute('aria-checked', includeSubdomains ? 'true' : 'false');
     }
   }
 
@@ -1623,13 +1632,23 @@ export function setScope(scope: UiScope) {
       renderChips('pags', [25, 50, 100], 50);
       renderChips('mb', [50, 100, 200], 100);
       if (subSwitch) subSwitch.className = 'switch-track off';
+      const siteSubSw = document.getElementById('siteSubdomainsSwitch');
+      if (siteSubSw) {
+        siteSubSw.className = 'switch-track off';
+        siteSubSw.setAttribute('aria-checked', 'false');
+      }
     } else {
       limitPages = 100;
       limitMb = 200;
-      includeSubdomains = true;
+      includeSubdomains = false;
       renderChips('pags', [50, 100, 250], 100);
       renderChips('mb', [100, 200, 500], 200);
-      if (subSwitch) subSwitch.className = 'switch-track';
+      if (subSwitch) subSwitch.className = 'switch-track off';
+      const siteSubSw = document.getElementById('siteSubdomainsSwitch');
+      if (siteSubSw) {
+        siteSubSw.className = 'switch-track off';
+        siteSubSw.setAttribute('aria-checked', 'false');
+      }
     }
   }
 
@@ -1652,7 +1671,7 @@ function renderChips(type: 'pags' | 'mb', values: number[], activeValue: number)
       else setLimitMb(v);
     };
     chip.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         chip.click();
       }
@@ -2250,7 +2269,8 @@ async function performRealCapture(
 
     // 2. Executa o módulo de acordo com o modo e escopo
     if (currentMode === 'html') {
-      const res = await pageHtmlModule.run({
+      let res: any = null;
+      res = await pageHtmlModule.run({
         tabId: currentTabId || undefined,
         url: currentTabUrl,
         title: currentTabTitle,
@@ -2322,7 +2342,8 @@ async function performRealCapture(
       const domDoc = parser.parseFromString(pageRawHtml, 'text/html');
       const candidates = collectMediaFromDom(domDoc, currentTabUrl || 'http://localhost', selectedTypes);
 
-      const res = await captureMediaZip({
+      let res: any = null;
+      res = await captureMediaZip({
         candidates,
         title: currentTabTitle,
         pageUrl: currentTabUrl,
@@ -2377,7 +2398,8 @@ async function performRealCapture(
 
     // 3. Captura Completa Fiel (ZIP) - Escopos esta_pagina, paginas_vinculadas ou site_inteiro
     const crawlMode = currentScope === 'esta_pagina' ? 'page' : (currentScope === 'paginas_vinculadas' ? 'linked' : 'site');
-    const result = await captureFaithfulSite({
+    let result: any = null;
+    result = await captureFaithfulSite({
       tabId: currentTabId || undefined,
       url: currentTabUrl,
       title: currentTabTitle,
@@ -2415,7 +2437,7 @@ async function performRealCapture(
           loaded,
           total,
           currentItem: item || 'Compactando...',
-          pagesDone: result?.stats?.totalPages || 1,
+          pagesDone: currentScope === 'esta_pagina' ? 1 : (result?.stats?.totalPages || 1),
           pagesTotal: currentScope === 'esta_pagina' ? 1 : Math.min(12, limitPages),
           mb: estMb,
           elapsedTime: elapsed,
@@ -2591,7 +2613,8 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
       pageRawHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${currentTabTitle || 'Página'}</title></head><body><h1>${currentTabTitle || 'Página Gravada'}</h1></body></html>`;
     }
 
-    const result = await captureFaithfulSite({
+    let result: any = null;
+    result = await captureFaithfulSite({
       tabId: currentTabId || undefined,
       url: currentTabUrl,
       title: currentTabTitle,
@@ -3008,7 +3031,7 @@ export function initSidePanel() {
   if (mZip) {
     mZip.onclick = () => selectMode('zip');
     mZip.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectMode('zip');
       }
@@ -3017,7 +3040,7 @@ export function initSidePanel() {
   if (mPiece) {
     mPiece.onclick = () => selectMode('piece');
     mPiece.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectMode('piece');
       }
@@ -3026,7 +3049,7 @@ export function initSidePanel() {
   if (mHtml) {
     mHtml.onclick = () => selectMode('html');
     mHtml.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectMode('html');
       }
@@ -3035,7 +3058,7 @@ export function initSidePanel() {
   if (mImgs) {
     mImgs.onclick = () => selectMode('images');
     mImgs.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectMode('images');
       }
@@ -3044,7 +3067,7 @@ export function initSidePanel() {
   if (mSite) {
     mSite.onclick = () => selectMode('site');
     mSite.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectMode('site');
       }
@@ -3061,7 +3084,7 @@ export function initSidePanel() {
     };
     btnCfgSite.onclick = openSiteOpt;
     btnCfgSite.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         openSiteOpt(e);
       }
@@ -3077,7 +3100,7 @@ export function initSidePanel() {
     };
     btnCfgMidias.onclick = openMidiasOpt;
     btnCfgMidias.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         openMidiasOpt(e);
       }
@@ -3115,7 +3138,7 @@ export function initSidePanel() {
     };
     (c as HTMLElement).onclick = handleSelect;
     (c as HTMLElement).onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         handleSelect();
       }
@@ -3138,7 +3161,7 @@ export function initSidePanel() {
     };
     (c as HTMLElement).onclick = handleSelect;
     (c as HTMLElement).onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         handleSelect();
       }
@@ -3154,7 +3177,7 @@ export function initSidePanel() {
     };
     siteSubSw.onclick = toggleSub;
     siteSubSw.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         toggleSub();
       }
@@ -3198,7 +3221,7 @@ export function initSidePanel() {
     };
     (c as HTMLElement).onclick = handleSelect;
     (c as HTMLElement).onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         handleSelect();
       }
@@ -3219,7 +3242,7 @@ export function initSidePanel() {
     };
     (c as HTMLElement).onclick = handleSelect;
     (c as HTMLElement).onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         handleSelect();
       }
@@ -3232,7 +3255,7 @@ export function initSidePanel() {
   if (cardScreens) {
     cardScreens.onclick = () => setScrollLimitChoice('10');
     cardScreens.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         setScrollLimitChoice('10');
       }
@@ -3241,7 +3264,7 @@ export function initSidePanel() {
   if (cardTime) {
     cardTime.onclick = () => setScrollLimitChoice('30');
     cardTime.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         setScrollLimitChoice('30');
       }
@@ -3250,7 +3273,7 @@ export function initSidePanel() {
   if (cardUnlimited) {
     cardUnlimited.onclick = () => setScrollLimitChoice('unlimited');
     cardUnlimited.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         setScrollLimitChoice('unlimited');
       }
@@ -3267,7 +3290,7 @@ export function initSidePanel() {
     };
     (c as HTMLElement).onclick = handleSelect;
     (c as HTMLElement).onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         handleSelect();
       }
@@ -3348,7 +3371,7 @@ export function initSidePanel() {
   if (optAuto) {
     optAuto.onclick = selectAutoMethod;
     optAuto.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectAutoMethod();
       }
@@ -3357,7 +3380,7 @@ export function initSidePanel() {
   if (optRec) {
     optRec.onclick = selectRecordingMethod;
     optRec.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         selectRecordingMethod();
       }
@@ -3394,7 +3417,7 @@ export function initSidePanel() {
       if (currentState === 'inicio') renderFooterActions();
     };
     recSw.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         recSw.click();
       }
@@ -3462,7 +3485,7 @@ export function initSidePanel() {
       if (currentState === 'inicio') renderFooterActions();
     };
     autoSw.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         autoSw.click();
       }
@@ -3478,7 +3501,7 @@ export function initSidePanel() {
       subSw.setAttribute('aria-checked', includeSubdomains ? 'true' : 'false');
     };
     subSw.onkeydown = (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (isActionKey(e)) {
         e.preventDefault();
         subSw.click();
       }
