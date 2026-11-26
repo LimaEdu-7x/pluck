@@ -345,8 +345,8 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
 
       let backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
       expect(backBtn).not.toBeNull();
-      expect(backBtn?.textContent).toBe('Voltar ao início');
-      expect(backBtn?.getAttribute('aria-label')).toBe('Voltar ao início');
+      expect(backBtn?.textContent).toContain('Voltar ao início');
+      expect(backBtn?.getAttribute('aria-label')).toContain('Voltar ao início');
       expect(backBtn?.classList.contains('btn-small')).toBe(true);
       expect(backBtn?.classList.contains('btn-secondary')).toBe(true);
 
@@ -356,8 +356,8 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
 
       backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
       expect(backBtn).not.toBeNull();
-      expect(backBtn?.textContent).toBe('Voltar ao início');
-      expect(backBtn?.getAttribute('aria-label')).toBe('Voltar ao início');
+      expect(backBtn?.textContent).toContain('Voltar ao início');
+      expect(backBtn?.getAttribute('aria-label')).toContain('Voltar ao início');
     });
 
     it('aparece no rodapé quando a coleta termina em erro', () => {
@@ -369,8 +369,8 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
 
       const backBtn = document.getElementById('btnBackToStart') as HTMLButtonElement;
       expect(backBtn).not.toBeNull();
-      expect(backBtn?.textContent).toBe('Voltar ao início');
-      expect(backBtn?.getAttribute('aria-label')).toBe('Voltar ao início');
+      expect(backBtn?.textContent).toContain('Voltar ao início');
+      expect(backBtn?.getAttribute('aria-label')).toContain('Voltar ao início');
       expect(backBtn?.classList.contains('btn-small')).toBe(true);
       expect(backBtn?.classList.contains('btn-secondary')).toBe(true);
     });

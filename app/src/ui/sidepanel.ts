@@ -96,8 +96,10 @@ export function getActiveAutoscrollOptions(): AutoscrollOptions {
   };
 }
 let limitPages = 50;
+let limitDepth = 2;
 let limitMb = 100;
 let includeSubdomains = false;
+let recordingStartTime: number | null = null;
 
 // Estado da aba e sessão
 let currentTabId: number | null = null;
@@ -838,7 +840,7 @@ function populateStateData(state: UiState, data?: any) {
           pOmitted.className = 'metrics-val';
         }
       }
-      if (pTime) pTime.textContent = `${data?.elapsedTime || '0,8'} segundos`;
+      if (pTime) pTime.textContent = `${data?.elapsedTime || '0,0'} segundos`;
     } else {
       const pName = document.getElementById('prontoZipFilename');
       const pSuper = document.getElementById('prontoZipSuper');
@@ -878,7 +880,12 @@ function populateStateData(state: UiState, data?: any) {
       }
 
       if (pMeta) {
-        pMeta.textContent = `${data?.sizeText || '18,4 MB'} · ${data?.pages || 1} página${(data?.pages || 1) > 1 ? 's' : ''} · ${data?.totalAssets || data?.itemCount || 0} recursos salvos`;
+        pMeta.style.display = 'block';
+        if (data?.sizeText) {
+          pMeta.textContent = `Tamanho do arquivo: ${data.sizeText}`;
+        } else {
+          pMeta.textContent = 'Tamanho do arquivo: pronto para abrir';
+        }
       }
       if (pPages) pPages.textContent = `${data?.pages || 1} página${(data?.pages || 1) > 1 ? 's' : ''} salva${(data?.pages || 1) > 1 ? 's' : ''} (100%)`;
       if (pCss) pCss.textContent = `${data?.cssCount || 0} arquivos salvos`;
@@ -894,13 +901,17 @@ function populateStateData(state: UiState, data?: any) {
         if (data?.timeoutErrors) pTimeout.className = 'metrics-val err';
         else pTimeout.className = 'metrics-val';
       }
-      if (pTime) pTime.textContent = `${data?.elapsedTime || '18,4'} segundos decorridos`;
+      if (pTime) pTime.textContent = `${data?.elapsedTime || '0,0'} segundos decorridos`;
     }
   } else if (state === 'permissao') {
     const pDom = document.getElementById('permDomain');
     const pScope = document.getElementById('permScopeText');
-    if (pDom) pDom.textContent = currentTabOrigin ? new URL(currentTabOrigin).hostname : 'este domínio';
-    if (pScope) pScope.textContent = `Rotas sob ${currentTabOrigin ? new URL(currentTabOrigin).hostname : 'o domínio'}`;
+    let safeHost = 'este domínio';
+    try {
+      if (currentTabOrigin) safeHost = new URL(currentTabOrigin).hostname;
+    } catch {}
+    if (pDom) pDom.textContent = safeHost;
+    if (pScope) pScope.textContent = `Rotas sob ${safeHost}`;
   } else if (state === 'erro') {
     const errTitle = document.getElementById('erroTitle');
     const errSub = document.getElementById('erroSub');
@@ -915,10 +926,10 @@ function populateStateData(state: UiState, data?: any) {
     if (gTitle) gTitle.textContent = currentTabTitle || 'Gravando página ativa';
     if (gUrl) gUrl.textContent = currentTabUrl || 'https://...';
 
-    const startTime = Date.now();
+    recordingStartTime = Date.now();
     if (recordingTimerInterval) clearInterval(recordingTimerInterval);
     recordingTimerInterval = setInterval(() => {
-      const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+      const elapsedSec = Math.floor((Date.now() - (recordingStartTime || Date.now())) / 1000);
       const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
       const secs = String(elapsedSec % 60).padStart(2, '0');
       if (gTimer) gTimer.textContent = `${mins}:${secs}`;
@@ -928,7 +939,10 @@ function populateStateData(state: UiState, data?: any) {
       clearInterval(recordingTimerInterval);
       recordingTimerInterval = null;
     }
-    const origHost = currentTabOrigin ? new URL(currentTabOrigin).hostname : 'getartcraft.com';
+    let origHost = 'getartcraft.com';
+    try {
+      if (currentTabOrigin) origHost = new URL(currentTabOrigin).hostname;
+    } catch {}
     const msgEl = document.getElementById('gravacaoErroMsg');
     if (msgEl) {
       if (data?.errorMsg) {
@@ -941,9 +955,13 @@ function populateStateData(state: UiState, data?: any) {
     if (subEl) {
       subEl.textContent = 'Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.';
     }
+    const presBox = document.getElementById('gravacaoErroPreservadaBox');
     const presEl = document.getElementById('gravacaoErroPreservada');
     if (presEl && data?.retainedText) {
       presEl.textContent = data.retainedText;
+      if (presBox) presBox.style.display = 'block';
+    } else if (presBox) {
+      presBox.style.display = 'none';
     }
   }
 }
@@ -1285,10 +1303,10 @@ function renderFooterActions(_data?: any) {
     btnBack.type = 'button';
     btnBack.className = 'btn-secondary btn-small';
     btnBack.id = 'btnBackToStart';
-    btnBack.setAttribute('aria-label', 'Voltar ao início');
+    btnBack.setAttribute('aria-label', 'Voltar ao início (descarta o arquivo)');
     btnBack.appendChild(createTablerArrowLeft());
     const backTxt = document.createElement('span');
-    backTxt.textContent = 'Voltar ao início';
+    backTxt.textContent = 'Voltar ao início (descarta o arquivo)';
     btnBack.appendChild(backTxt);
     btnBack.onclick = () => {
       resetToInitialState();
@@ -2364,6 +2382,7 @@ async function performRealCapture(
       mode: crawlMode,
       limits: {
         maxPages: limitPages,
+        maxDepth: limitDepth,
         maxBytes: limitMb * 1024 * 1024,
         includeSubdomains,
         allowedExternalDomains: Array.from(confirmedExternalDomains)
@@ -2519,7 +2538,16 @@ export async function handleStartRecording(): Promise<void> {
 
   try {
     await sessionRecorder.start(currentTabId, currentTabUrl, (errorMsg, state) => {
-      setState('gravacao_erro', { errorMsg, navigatedToUrl: state.navigatedToUrl });
+      let retainedText: string | undefined;
+      if (recordingStartTime) {
+        const elapsedSec = Math.floor((Date.now() - recordingStartTime) / 1000);
+        if (elapsedSec > 0) {
+          const m = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+          const s = String(elapsedSec % 60).padStart(2, '0');
+          retainedText = `${m}:${s} DE INTERAÇÕES SALVAS`;
+        }
+      }
+      setState('gravacao_erro', { errorMsg, navigatedToUrl: state.navigatedToUrl, retainedText });
     });
     setState('gravando');
   } catch (err) {
@@ -3052,19 +3080,33 @@ export function initSidePanel() {
   // Bind Botões de Configuração de Opções (v12)
   const btnCfgSite = document.getElementById('btnConfigSite');
   if (btnCfgSite) {
-    btnCfgSite.onclick = (e) => {
+    const openSiteOpt = (e: Event) => {
       e.stopPropagation();
       selectMode('site');
       setState('opcoes', { subview: 'site' });
+    };
+    btnCfgSite.onclick = openSiteOpt;
+    btnCfgSite.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openSiteOpt(e);
+      }
     };
   }
 
   const btnCfgMidias = document.getElementById('btnConfigMidias');
   if (btnCfgMidias) {
-    btnCfgMidias.onclick = (e) => {
+    const openMidiasOpt = (e: Event) => {
       e.stopPropagation();
       selectMode('images');
       setState('opcoes', { subview: 'midias' });
+    };
+    btnCfgMidias.onclick = openMidiasOpt;
+    btnCfgMidias.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openMidiasOpt(e);
+      }
     };
   }
 
@@ -3085,28 +3127,59 @@ export function initSidePanel() {
   // Bind Opções de Site Inteiro (Chips & Subdomínios)
   const sitePages = document.querySelectorAll('#sitePagesChips .chip-option');
   sitePages.forEach((c) => {
-    (c as HTMLElement).onclick = () => {
-      sitePages.forEach((x) => x.classList.remove('active'));
+    const handleSelect = () => {
+      sitePages.forEach((x) => {
+        x.classList.remove('active');
+        x.setAttribute('aria-checked', 'false');
+      });
       c.classList.add('active');
+      c.setAttribute('aria-checked', 'true');
       const val = parseInt(c.getAttribute('data-val') || '20', 10);
       setLimitPage(val);
+    };
+    (c as HTMLElement).onclick = handleSelect;
+    (c as HTMLElement).onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
     };
   });
 
   const siteDepth = document.querySelectorAll('#siteDepthChips .chip-option');
   siteDepth.forEach((c) => {
-    (c as HTMLElement).onclick = () => {
-      siteDepth.forEach((x) => x.classList.remove('active'));
+    const handleSelect = () => {
+      siteDepth.forEach((x) => {
+        x.classList.remove('active');
+        x.setAttribute('aria-checked', 'false');
+      });
       c.classList.add('active');
+      c.setAttribute('aria-checked', 'true');
+      const raw = c.getAttribute('data-val');
+      limitDepth = raw === '999' ? Infinity : parseInt(raw || '2', 10);
+    };
+    (c as HTMLElement).onclick = handleSelect;
+    (c as HTMLElement).onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
     };
   });
 
   const siteSubSw = document.getElementById('siteSubdomainsSwitch');
   if (siteSubSw) {
-    siteSubSw.onclick = () => {
+    const toggleSub = () => {
       includeSubdomains = !includeSubdomains;
       siteSubSw.className = includeSubdomains ? 'switch-track' : 'switch-track off';
       siteSubSw.setAttribute('aria-checked', includeSubdomains ? 'true' : 'false');
+    };
+    siteSubSw.onclick = toggleSub;
+    siteSubSw.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleSub();
+      }
     };
   }
 
@@ -3152,17 +3225,48 @@ export function initSidePanel() {
   const cardScreens = document.getElementById('scrollCardScreens');
   const cardTime = document.getElementById('scrollCardTime');
   const cardUnlimited = document.getElementById('scrollCardUnlimited');
-  if (cardScreens) cardScreens.onclick = () => setScrollLimitChoice('10');
-  if (cardTime) cardTime.onclick = () => setScrollLimitChoice('30');
-  if (cardUnlimited) cardUnlimited.onclick = () => setScrollLimitChoice('unlimited');
+  if (cardScreens) {
+    cardScreens.onclick = () => setScrollLimitChoice('10');
+    cardScreens.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setScrollLimitChoice('10');
+      }
+    };
+  }
+  if (cardTime) {
+    cardTime.onclick = () => setScrollLimitChoice('30');
+    cardTime.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setScrollLimitChoice('30');
+      }
+    };
+  }
+  if (cardUnlimited) {
+    cardUnlimited.onclick = () => setScrollLimitChoice('unlimited');
+    cardUnlimited.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setScrollLimitChoice('unlimited');
+      }
+    };
+  }
 
   const scrollChips = document.querySelectorAll('#scrollLimitChips .chip-option');
   scrollChips.forEach((c) => {
-    (c as HTMLElement).onclick = () => {
+    const handleSelect = () => {
       const v = c.getAttribute('data-val');
       if (v === '30') setScrollLimitChoice('30');
       else if (v === '999' || v === 'unlimited') setScrollLimitChoice('unlimited');
       else setScrollLimitChoice('10');
+    };
+    (c as HTMLElement).onclick = handleSelect;
+    (c as HTMLElement).onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSelect();
+      }
     };
   });
 
@@ -3172,63 +3276,83 @@ export function initSidePanel() {
   const autoCircle = document.getElementById('autoRadioCircle');
   const recCircle = document.getElementById('recRadioCircle');
 
-  if (optAuto) {
-    optAuto.onclick = () => {
-      captureMethod = 'automatic';
-      autoscrollOn = true;
-      if (autoSw) {
-        autoSw.className = 'switch-track';
-        autoSw.setAttribute('aria-checked', 'true');
-      }
-      if (recSw) {
-        recSw.className = 'switch-track off';
-        recSw.setAttribute('aria-checked', 'false');
-      }
-      if (autoCircle) {
-        autoCircle.classList.add('active');
-        autoCircle.innerHTML = '<div class="radio-dot"></div>';
-      }
-      if (recCircle) {
-        recCircle.classList.remove('active');
-        recCircle.innerHTML = '';
-      }
+  const selectAutoMethod = () => {
+    captureMethod = 'automatic';
+    autoscrollOn = true;
+    if (autoSw) {
+      autoSw.className = 'switch-track';
+      autoSw.setAttribute('aria-checked', 'true');
+    }
+    if (recSw) {
+      recSw.className = 'switch-track off';
+      recSw.setAttribute('aria-checked', 'false');
+    }
+    if (autoCircle) {
+      autoCircle.classList.add('active');
+      autoCircle.innerHTML = '<div class="radio-dot"></div>';
+    }
+    if (recCircle) {
+      recCircle.classList.remove('active');
+      recCircle.innerHTML = '';
+    }
+    if (optAuto) {
       optAuto.classList.add('selected');
       optAuto.setAttribute('aria-checked', 'true');
-      if (optRec) {
-        optRec.classList.remove('selected');
-        optRec.setAttribute('aria-checked', 'false');
+    }
+    if (optRec) {
+      optRec.classList.remove('selected');
+      optRec.setAttribute('aria-checked', 'false');
+    }
+    if (currentState === 'inicio') renderFooterActions();
+  };
+
+  const selectRecordingMethod = () => {
+    captureMethod = 'recording';
+    autoscrollOn = false;
+    if (recSw) {
+      recSw.className = 'switch-track';
+      recSw.setAttribute('aria-checked', 'true');
+    }
+    if (autoSw) {
+      autoSw.className = 'switch-track off';
+      autoSw.setAttribute('aria-checked', 'false');
+    }
+    if (recCircle) {
+      recCircle.classList.add('active');
+      recCircle.innerHTML = '<div class="radio-dot"></div>';
+    }
+    if (autoCircle) {
+      autoCircle.classList.remove('active');
+      autoCircle.innerHTML = '';
+    }
+    if (optRec) {
+      optRec.classList.add('selected');
+      optRec.setAttribute('aria-checked', 'true');
+    }
+    if (optAuto) {
+      optAuto.classList.remove('selected');
+      optAuto.setAttribute('aria-checked', 'false');
+    }
+    setScope('esta_pagina');
+    if (currentState === 'inicio') renderFooterActions();
+  };
+
+  if (optAuto) {
+    optAuto.onclick = selectAutoMethod;
+    optAuto.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectAutoMethod();
       }
-      if (currentState === 'inicio') renderFooterActions();
     };
   }
   if (optRec) {
-    optRec.onclick = () => {
-      captureMethod = 'recording';
-      autoscrollOn = false;
-      if (recSw) {
-        recSw.className = 'switch-track';
-        recSw.setAttribute('aria-checked', 'true');
+    optRec.onclick = selectRecordingMethod;
+    optRec.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectRecordingMethod();
       }
-      if (autoSw) {
-        autoSw.className = 'switch-track off';
-        autoSw.setAttribute('aria-checked', 'false');
-      }
-      if (recCircle) {
-        recCircle.classList.add('active');
-        recCircle.innerHTML = '<div class="radio-dot"></div>';
-      }
-      if (autoCircle) {
-        autoCircle.classList.remove('active');
-        autoCircle.innerHTML = '';
-      }
-      optRec.classList.add('selected');
-      optRec.setAttribute('aria-checked', 'true');
-      if (optAuto) {
-        optAuto.classList.remove('selected');
-        optAuto.setAttribute('aria-checked', 'false');
-      }
-      setScope('esta_pagina');
-      if (currentState === 'inicio') renderFooterActions();
     };
   }
 
@@ -3268,6 +3392,37 @@ export function initSidePanel() {
       }
     };
   }
+
+  // Setup keyboard arrow navigation for radio groups
+  function setupRadioArrowNav(containerSelector: string, itemSelector: string) {
+    const container = document.querySelector(containerSelector);
+    if (!container) return;
+    container.addEventListener('keydown', (e: Event) => {
+      const keyEv = e as KeyboardEvent;
+      if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].includes(keyEv.key)) {
+        const items = Array.from(container.querySelectorAll<HTMLElement>(itemSelector)).filter(
+          (el) => el.offsetParent !== null || el.getAttribute('role') === 'radio'
+        );
+        const focusedIndex = items.indexOf(document.activeElement as HTMLElement);
+        if (focusedIndex === -1) return;
+        keyEv.preventDefault();
+        let nextIndex = focusedIndex;
+        if (keyEv.key === 'ArrowDown' || keyEv.key === 'ArrowRight') {
+          nextIndex = (focusedIndex + 1) % items.length;
+        } else if (keyEv.key === 'ArrowUp' || keyEv.key === 'ArrowLeft') {
+          nextIndex = (focusedIndex - 1 + items.length) % items.length;
+        }
+        items[nextIndex]?.focus();
+        items[nextIndex]?.click();
+      }
+    });
+  }
+
+  setupRadioArrowNav('.mode-options-group', '.mode-card');
+  setupRadioArrowNav('.capture-mode-container', '.capture-option-row');
+  setupRadioArrowNav('#sitePagesChips', '.chip-option');
+  setupRadioArrowNav('#siteDepthChips', '.chip-option');
+  setupRadioArrowNav('#subview-opcoes-rolando', '.mode-card');
 
   // Bind Autoscroll Switch
   if (autoSw) {
@@ -3393,7 +3548,7 @@ if (typeof window !== 'undefined') {
     getSelectedScope: () => currentScope,
     getActiveAutoscrollOptions,
     setScrollLimitChoice,
-    getLimits: () => ({ limitPages, limitMb, includeSubdomains }),
+    getLimits: () => ({ limitPages, limitDepth, limitMb, includeSubdomains }),
     getLastDownload: () => lastDownloadInfo,
     clearLastDownload: () => { lastDownloadInfo = null; },
     getInMemoryArchivedFile: () => inMemoryArchivedFile,

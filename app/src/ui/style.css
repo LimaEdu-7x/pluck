@@ -47,7 +47,7 @@
 
   --text-primary: #FFFFFF;
   --text-secondary: #A2A19D;
-  --text-muted: #7A7975;
+  --text-muted: #8A8985;
   --text-inverted: #0B0B0C;
 
   --btn-primary-bg: #FFFFFF;
@@ -98,6 +98,7 @@ button:focus-visible,
 .capture-option-row:focus-visible,
 .chip-option:focus-visible,
 .switch-track:focus-visible,
+.mode-badge.action-badge:focus-visible,
 input[type="checkbox"]:focus-visible {
   outline: 2px solid #FFFFFF;
   outline-offset: 2px;
@@ -295,6 +296,8 @@ input[type="checkbox"]:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .ring-pulse-green,
+  .ring-pulse-red,
+  .rec-pulse-dot,
   .ring-spin-amber {
     animation: none !important;
   }
@@ -326,7 +329,7 @@ input[type="checkbox"]:focus-visible {
   .mode-title { font-size: 13.5px !important; }
   .mode-desc { font-size: 12px !important; padding-left: 21px !important; }
   .capture-mode-container { padding: 7px 10px !important; gap: 6px !important; }
-  .section-label { font-size: 10px !important; }
+  .section-label { font-size: 11px !important; }
   .desc-text { font-size: 12px !important; }
   .btn-primary { height: 44px !important; font-size: 14px !important; }
   .btn-secondary { height: 38px !important; font-size: 13.5px !important; }
@@ -498,7 +501,7 @@ input[type="checkbox"]:focus-visible {
 
 .mode-badge {
   font-family: var(--font-special);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   border: 1px solid var(--border-divider);
   border-radius: 3px;
@@ -517,7 +520,7 @@ input[type="checkbox"]:focus-visible {
   border: 1px solid var(--border-chip);
   color: var(--text-primary);
   font-family: var(--font-special);
-  font-size: 10px;
+  font-size: 11px;
   padding: 2px 7px;
   border-radius: 3px;
   cursor: pointer;
@@ -625,7 +628,7 @@ input[type="checkbox"]:focus-visible {
 
 .badge {
   font-family: var(--font-special);
-  font-size: 10px;
+  font-size: 11px;
   border-radius: 3px;
   padding: 1px 5px;
   letter-spacing: 0.04em;
@@ -782,6 +785,12 @@ input[type="checkbox"]:focus-visible {
   border: 1px solid var(--border-card);
   border-radius: 6px;
   cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.media-card:focus-within {
+  outline: 2px solid #FFFFFF;
+  outline-offset: 2px;
 }
 
 .media-info {
@@ -855,6 +864,11 @@ input[type="checkbox"]:focus-visible {
   font-family: var(--font-body);
   font-size: 13.5px;
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  display: block;
 }
 
 .progress-bar-wrap {
