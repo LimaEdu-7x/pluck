@@ -21,6 +21,7 @@ import {
 import { safePath } from '../security/safe-path';
 import { validateUrl, isLocalhostPage } from '../security/url-guard';
 import { isValidDocumentHtml } from '../capture/capture-engine';
+import { isSpaSkeleton, serializeLiveDom, isHeavySpa } from './dom-serializer';
 
 export async function captureFaithfulSite(
   options: FaithfulCaptureOptions
@@ -59,45 +60,54 @@ export async function captureFaithfulSite(
         options.onProgress(0, 100, 'Executando autoscroll e ativando animações...');
       }
 
+      const scrollOpts = {
+        step: 400,
+        intervalMs: 150,
+        ...(options.autoscrollOptions || {})
+      };
+
       if (tabId && typeof chrome !== 'undefined' && chrome.scripting) {
         try {
           await chrome.scripting.executeScript({
             target: { tabId },
             func: performAutoscroll,
-            args: [{ step: 400, intervalMs: 150 }]
+            args: [scrollOpts]
           });
         } catch {
           if (recorder) {
             try {
-              await recorder.evaluate(`(${performAutoscroll.toString()})({ step: 400, intervalMs: 150 })`);
+              await recorder.evaluate(`(${performAutoscroll.toString()})(${JSON.stringify(scrollOpts)})`);
             } catch {}
           }
         }
       }
     }
 
-    // 3. Captura o DOM serializado da página principal
+    // 3. Captura o DOM serializado da página principal após o autoscroll
     let mainHtml = options.html || '';
-    if (!mainHtml && tabId && typeof chrome !== 'undefined' && chrome.scripting) {
+
+    // Se temos tabId e scripting, captura o DOM vivo após o autoscroll para preservar
+    // Shadow DOM Declarativo (<template shadowrootmode="open">), imagens resolvidas e nós hidratados
+    if (tabId && typeof chrome !== 'undefined' && chrome.scripting) {
       try {
         const results = await chrome.scripting.executeScript({
           target: { tabId },
-          func: () => document.documentElement.outerHTML
+          func: serializeLiveDom
         });
-        if (results && results[0]?.result) {
+        if (results && results[0]?.result && isValidDocumentHtml(results[0].result)) {
           mainHtml = results[0].result;
         }
       } catch (err) {
-        console.warn('executeScript falhou no faithful-engine:', err);
+        console.warn('executeScript serializeLiveDom falhou no faithful-engine:', err);
       }
     }
 
-    if (!mainHtml && recorder) {
+    if ((!mainHtml || isSpaSkeleton(mainHtml) || !mainHtml.includes('shadowrootmode=')) && recorder) {
       try {
-        const cdpHtml = await recorder.evaluate('document.documentElement.outerHTML');
-        if (cdpHtml) mainHtml = cdpHtml;
+        const cdpHtml = await recorder.evaluate(`(${serializeLiveDom.toString()})()`);
+        if (cdpHtml && isValidDocumentHtml(cdpHtml)) mainHtml = cdpHtml;
       } catch (err) {
-        console.warn('CDP evaluate falhou no faithful-engine:', err);
+        console.warn('CDP evaluate serializeLiveDom falhou no faithful-engine:', err);
       }
     }
 
@@ -105,17 +115,21 @@ export async function captureFaithfulSite(
       throw new Error(`Falha crítica no Modo Fiel: DOM da página principal vazio ou inacessível (${pageUrl}).`);
     }
 
-    // 4. Coleta recursos gravados pelo CDP
+    // 4. Coleta recursos gravados pelo CDP ou fornecidos via customResources (gravação manual)
     let capturedResources: CapturedResource[] = [];
+    if (options.customResources && Array.isArray(options.customResources)) {
+      capturedResources.push(...options.customResources);
+    }
     if (recorder) {
       if (options.onProgress) {
         options.onProgress(50, 100, 'Coletando recursos de rede via CDP...');
       }
-      capturedResources = await recorder.collectResources((loaded, total, item) => {
+      const cdpResources = await recorder.collectResources((loaded, total, item) => {
         if (options.onProgress) {
           options.onProgress(loaded, total, item);
         }
       });
+      capturedResources.push(...cdpResources);
     }
 
     // 5. Mapeia todos os recursos capturados para caminhos dentro do ZIP
@@ -224,6 +238,18 @@ export async function captureFaithfulSite(
       const isRootLocal = isLocalhostPage(pageUrl);
 
       while (crawlSession.queuedUrls.length > 0 && !crawlSession.isFinished) {
+        // Checa parada geral solicitada pelo usuário ("Parar e salvar")
+        if ((options.shouldStop && options.shouldStop()) || options.signal?.aborted) {
+          crawlSession.isFinished = true;
+          break;
+        }
+
+        // Checa se o usuário solicitou pular a página atual ("Pular a página atual")
+        if (options.shouldSkipCurrent && options.shouldSkipCurrent()) {
+          crawlSession.queuedUrls.shift();
+          continue;
+        }
+
         const next = crawlSession.queuedUrls.shift();
         if (!next || crawlSession.visitedUrls.has(next.url)) continue;
 
@@ -298,7 +324,14 @@ export async function captureFaithfulSite(
             externalAssetsCount += subDownloads.externalCount;
 
             // Reescreve e salva a subpágina
-            const rewrittenSubHtml = rewriteHtmlDocument(subHtml, res.url || next.url, actualSubPageZip, urlToZipMap);
+            const rewrittenSubHtml = rewriteHtmlDocument(
+              subHtml,
+              res.url || next.url,
+              actualSubPageZip,
+              urlToZipMap,
+              false,
+              isHeavySpa(res.url || next.url, subHtml)
+            );
             const encodedSub = new TextEncoder().encode(rewrittenSubHtml);
             files[actualSubPageZip] = encodedSub;
             totalBytes += encodedSub.byteLength;
@@ -402,7 +435,15 @@ export async function captureFaithfulSite(
 
     // 8. Reescreve e salva a página HTML principal
     const isSinglePage = mode === 'page';
-    const rewrittenMainHtml = rewriteHtmlDocument(mainHtml, pageUrl, 'index.html', urlToZipMap, isSinglePage);
+    const disableAppScripts = isHeavySpa(pageUrl, mainHtml);
+    const rewrittenMainHtml = rewriteHtmlDocument(
+      mainHtml,
+      pageUrl,
+      'index.html',
+      urlToZipMap,
+      isSinglePage,
+      disableAppScripts
+    );
     const mainHtmlBytes = new TextEncoder().encode(rewrittenMainHtml);
     files['index.html'] = mainHtmlBytes;
     totalBytes += mainHtmlBytes.byteLength;
@@ -500,9 +541,15 @@ export function extractStaticAssetCandidates(
     if (match[1]) candidates.add(match[1]);
   }
 
-  // 5. URLs de CDN absolutas ou protocol-relative com extensões de mídia/3D/fontes conhecidas
-  const cdnRegex = /(?:https?:)?\/\/[^\s"'<>\(\)]+\.(?:webp|png|jpg|jpeg|svg|gif|ico|avif|woff2|woff|ttf|wasm|glb|gltf|riv|hdr|bin|json)/gi;
+  // 5. URLs de CDN absolutas ou protocol-relative com extensões de mídia/3D/fontes conhecidas (com suporte a query strings)
+  const cdnRegex = /(?:https?:)?\/\/[^\s"'<>\(\)]+\.(?:webp|png|jpg|jpeg|svg|gif|ico|avif|woff2|woff|ttf|wasm|glb|gltf|riv|hdr|bin|json)(?:\?[^\s"'<>\(\)]*)?/gi;
   for (const match of html.matchAll(cdnRegex)) {
+    candidates.add(match[0]);
+  }
+
+  // 5.1 URLs de thumbnails e avatares do YouTube (i.ytimg.com, yt3.ggpht.com)
+  const ytCdnRegex = /(?:https?:)?\/\/(?:[a-zA-Z0-9_\-\.]+\.)?(?:ytimg\.com|ggpht\.com)\/[^\s"'<>\(\)]+/gi;
+  for (const match of html.matchAll(ytCdnRegex)) {
     candidates.add(match[0]);
   }
 

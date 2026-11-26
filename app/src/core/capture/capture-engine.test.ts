@@ -82,13 +82,13 @@ describe('CaptureEngine', () => {
     expect(result.sanitizedHtml).not.toContain('<script');
     expect(result.sanitizedHtml).not.toContain('type="password"');
     expect(result.sanitizedHtml).toContain("default-src 'none'");
-    expect(result.sanitizedHtml).toContain('img-src data:');
-    expect(result.sanitizedHtml).toContain('font-src data:');
+    expect(result.sanitizedHtml).toContain('img-src https: http: data:');
+    expect(result.sanitizedHtml).toContain('font-src https: http: data:');
     expect(result.sanitizedHtml).toContain("style-src 'unsafe-inline'");
     expect(result.sanitizedHtml).toContain('<h1>Ola</h1>');
   });
 
-  it('capturePageHtml embute CSS inline e converte imagens para data: URI', async () => {
+  it('capturePageHtml embute CSS inline e mantém imagens apontando para URL remota absoluta', async () => {
     const origFetch = global.fetch;
     const samplePngB64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     const samplePngBytes = Buffer.from(samplePngB64, 'base64');
@@ -121,7 +121,7 @@ describe('CaptureEngine', () => {
           </head>
           <body>
             <h1>Logo</h1>
-            <img src="http://localhost/logo.png" alt="Logo">
+            <img src="/logo.png" alt="Logo">
           </body>
         </html>
       `,
@@ -138,21 +138,22 @@ describe('CaptureEngine', () => {
     expect(result.stats.inlinedImages).toBe(1);
     expect(result.sanitizedHtml).toContain('<style data-inlined-from="http://localhost/style.css">');
     expect(result.sanitizedHtml).toContain('background: #16181D');
-    expect(result.sanitizedHtml).toContain('data:image/png;base64,');
+    expect(result.sanitizedHtml).toContain('src="http://localhost/logo.png"');
+    expect(result.sanitizedHtml).not.toContain('data:image/png;base64,');
 
     global.fetch = origFetch;
   });
 
   it('capturePageHtml omite recursos acima de 2 MB e registra estatísticas de omitidos', async () => {
     const origFetch = global.fetch;
-    // Buffer simulando arquivo grande de 2.5 MB (> 2 MB cap)
+    // Buffer simulando stylesheet grande de 2.5 MB (> 2 MB cap)
     const bigBytes = new Uint8Array(2.5 * 1024 * 1024);
 
     global.fetch = vi.fn().mockImplementation(async (url: string) => {
-      if (url.includes('big-image.png')) {
+      if (url.includes('big-style.css')) {
         return {
           ok: true,
-          headers: new Headers({ 'content-type': 'image/png' }),
+          headers: new Headers({ 'content-type': 'text/css' }),
           arrayBuffer: async () => bigBytes.buffer
         };
       }
@@ -163,23 +164,26 @@ describe('CaptureEngine', () => {
       html: `
         <!DOCTYPE html>
         <html>
-          <head><title>Teste Teto 2MB</title></head>
+          <head>
+            <title>Teste Teto 2MB</title>
+            <link rel="stylesheet" href="http://localhost/big-style.css">
+          </head>
           <body>
-            <img src="http://localhost/big-image.png" alt="Gigante">
+            <p>Conteudo com estilo grande</p>
           </body>
         </html>
       `,
       title: 'Teste Teto 2MB',
       url: 'http://localhost/pagina',
       baseURI: 'http://localhost/pagina',
-      stylesheets: [],
+      stylesheets: ['http://localhost/big-style.css'],
       images: []
     };
 
     const result = await capturePageHtml(raw);
     expect(result.stats.omittedAssets?.count).toBe(1);
     expect(result.stats.omittedAssets?.reasons[0]).toContain('excedeu limite de 2 MB');
-    // Não incluiu a imagem de 2.5 MB
+    // Não incluiu o CSS de 2.5 MB
     expect(result.sanitizedHtml).not.toContain(bigBytes);
 
     global.fetch = origFetch;

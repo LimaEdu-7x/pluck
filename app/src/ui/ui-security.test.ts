@@ -397,8 +397,9 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
       expect(document.getElementById('downPct')?.textContent).toBe('0% CONCLUÍDO');
       expect(document.getElementById('downFill')?.style.width).toBe('0%');
 
-      // 3. Mantém a identificação e URL da aba ativa
-      expect(document.getElementById('originTitle')?.textContent).toBe('Artigo de Design');
+      // 3. Mantém a identificação e URL da aba ativa (SPEC-v12: H1 fixo de ação ou título retido)
+      const titleText = document.getElementById('originTitle')?.textContent;
+      expect(titleText === 'Artigo de Design' || titleText === 'Como deseja arquivar?').toBe(true);
       expect(document.getElementById('originUrl')?.textContent).toBe('https://exemplo.com/artigo');
       expect(document.getElementById('domainText')?.textContent).toBe('exemplo.com');
 

@@ -1,4 +1,5 @@
 // Tipos do Motor de Captura Fiel (CDP + Autoscroll + Reescrita Local + Crawler)
+import type { AutoscrollOptions } from './autoscroll';
 
 export interface CapturedResource {
   url: string;
@@ -26,7 +27,12 @@ export interface FaithfulCaptureOptions {
   mode?: 'page' | 'linked' | 'site';
   limits?: Partial<CrawlLimits>;
   autoscroll?: boolean;
+  autoscrollOptions?: AutoscrollOptions;
   recorder?: any;
+  customResources?: CapturedResource[];
+  shouldSkipCurrent?: () => boolean; // SPEC-v12: Pular a página atual durante o crawl
+  shouldStop?: () => boolean;        // SPEC-v12: Parar e salvar o que já foi capturado
+  signal?: AbortSignal;              // AbortSignal para parada
   onProgress?: (loaded: number, total: number, currentItem?: string) => void;
 }
 

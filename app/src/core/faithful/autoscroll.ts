@@ -1,4 +1,13 @@
-// Motor de Autoscroll Fiel (Lenis, GSAP, WheelEvent, Tabs e Lazy-Load)
+// Motor de Autoscroll Fiel (Lenis, GSAP, WheelEvent, Tabs, Lazy-Load e Rolagem Infinita)
+
+export type InfiniteScrollLimitType = 'screens' | 'time' | 'unlimited';
+
+export interface AutoscrollProgressInfo {
+  screensScrolled: number;
+  isInfiniteScroll: boolean;
+  docHeight: number;
+  currentY: number;
+}
 
 export interface AutoscrollOptions {
   step?: number;
@@ -9,13 +18,25 @@ export interface AutoscrollOptions {
   settleDelayMs?: number;
   returnBehavior?: ScrollBehavior;
   passes?: number;
-  onProgress?: (currentY: number, maxY: number) => void;
+  onProgress?: (currentY: number, maxY: number, info?: AutoscrollProgressInfo) => void;
+
+  // SPEC-v12: Rolagem Infinita e Limites
+  limitType?: InfiniteScrollLimitType; // 'screens' (padrão) | 'time' | 'unlimited'
+  maxScreens?: number;                 // padrão: 10 telas
+  maxTimeSeconds?: number;             // padrão: 60 s
+  viewportHeight?: number;             // altura da tela (padrão: window.innerHeight || 800)
+  getHeight?: () => number;            // getter customizado de altura (suporte a containers virtuais/testes)
+  shouldStop?: () => boolean;          // callback para parada imediata pelo usuário ("Parar e salvar" ou "Pular")
+  signal?: AbortSignal;                // AbortSignal para cancelamento
 }
 
 export interface AutoscrollResult {
   totalScrolled: number;
   durationMs: number;
   finalHeight: number;
+  screensScrolled: number;
+  isInfiniteScrollDetected: boolean;
+  stoppedByUser: boolean;
 }
 
 export async function performAutoscroll(
@@ -23,22 +44,64 @@ export async function performAutoscroll(
 ): Promise<AutoscrollResult> {
   const step = options.step || 400;
   const intervalMs = options.intervalMs || 150;
-  const maxHeight = options.maxHeight || 60000;
-  const maxDurationMs = options.maxDurationMs || 60000;
   const passes = options.passes || 1;
   const startTime = Date.now();
 
+  const limitType: InfiniteScrollLimitType = options.limitType || 'screens';
+  const maxScreens = options.maxScreens !== undefined ? options.maxScreens : 10;
+  const maxTimeSeconds = options.maxTimeSeconds !== undefined ? options.maxTimeSeconds : 60;
+
+  // Limite de tempo em ms
+  const maxDurationMs =
+    limitType === 'time'
+      ? maxTimeSeconds * 1000
+      : (options.maxDurationMs || (limitType === 'unlimited' ? 3600000 : maxTimeSeconds * 1000));
+
+  const viewportHeight =
+    options.viewportHeight ||
+    (typeof window !== 'undefined' && window.innerHeight ? window.innerHeight : 800);
+
+  const maxHeight = limitType === 'unlimited' ? 1000000 : (options.maxHeight || 60000);
+
   let currentY = 0;
-  let docHeight = getDocumentHeight(options.initialHeight);
+  const initialDocHeight = getDocumentHeight(options.initialHeight, options.getHeight);
+  let docHeight = initialDocHeight;
+  let heightExpansions = 0;
+  let isInfiniteScrollDetected = false;
+  let stoppedByUser = false;
 
   for (let pass = 0; pass < passes; pass++) {
     currentY = 0;
-    while (currentY < docHeight && currentY < maxHeight) {
+    while (
+      (limitType === 'time' || currentY < docHeight) &&
+      (limitType === 'time' || currentY < maxHeight)
+    ) {
+      // Checa parada solicitada pelo usuário
+      if ((options.shouldStop && options.shouldStop()) || options.signal?.aborted) {
+        stoppedByUser = true;
+        break;
+      }
+
+      // Checa limite de tempo
       if (Date.now() - startTime >= maxDurationMs) {
         break;
       }
 
-      currentY += step;
+      // Checa limite por telas no modo 'screens'
+      const currentScreens = Math.floor(currentY / viewportHeight);
+      if (limitType === 'screens' && currentScreens >= maxScreens) {
+        break;
+      }
+
+      // Se não for por tempo e já atingiu o final do documento, encerra o loop
+      if (limitType !== 'time' && currentY >= docHeight) {
+        break;
+      }
+
+      // Avança o scroll até a altura máxima conhecida
+      if (currentY < docHeight) {
+        currentY = Math.min(docHeight, currentY + step);
+      }
       if (typeof window !== 'undefined') {
         try {
           window.scrollTo({ top: currentY, behavior: 'smooth' });
@@ -66,19 +129,38 @@ export async function performAutoscroll(
         }
       }
 
-      // Notifica progresso
+      // Notifica progresso com métricas detalhadas
       if (options.onProgress) {
-        options.onProgress(currentY, docHeight);
+        options.onProgress(currentY, docHeight, {
+          screensScrolled: Math.floor(currentY / viewportHeight),
+          isInfiniteScroll: isInfiniteScrollDetected,
+          docHeight,
+          currentY
+        });
       }
 
       // Aguarda o intervalo para o IntersectionObserver e layout responderem
       await sleep(intervalMs);
 
-      // Atualiza a altura caso o site tenha carregado novos blocos dinamicamente
-      const newHeight = getDocumentHeight(options.initialHeight);
+      // Checa parada durante o sleep
+      if ((options.shouldStop && options.shouldStop()) || options.signal?.aborted) {
+        stoppedByUser = true;
+        break;
+      }
+
+      // Atualiza a altura caso o site tenha carregado novos blocos dinamicamente (rolagem infinita)
+      const newHeight = getDocumentHeight(options.initialHeight, options.getHeight);
       if (newHeight > docHeight) {
+        heightExpansions++;
+        if (heightExpansions >= 2 || newHeight > initialDocHeight + viewportHeight) {
+          isInfiniteScrollDetected = true;
+        }
         docHeight = newHeight;
       }
+    }
+
+    if (stoppedByUser) {
+      break;
     }
 
     if (pass < passes - 1) {
@@ -108,14 +190,25 @@ export async function performAutoscroll(
     await sleep(settleDelayMs);
   }
 
+  const finalScreens = Math.floor(currentY / viewportHeight);
+
   return {
     totalScrolled: currentY,
     durationMs: Date.now() - startTime,
-    finalHeight: docHeight
+    finalHeight: docHeight,
+    screensScrolled: finalScreens,
+    isInfiniteScrollDetected,
+    stoppedByUser
   };
 }
 
-function getDocumentHeight(fallbackHeight?: number): number {
+function getDocumentHeight(fallbackHeight?: number, customGetter?: () => number): number {
+  if (customGetter) {
+    try {
+      const val = customGetter();
+      if (typeof val === 'number' && val > 0) return val;
+    } catch {}
+  }
   if (typeof document === 'undefined') return fallbackHeight || 1000;
   const body = document.body;
   const html = document.documentElement;
@@ -140,6 +233,10 @@ function clickSafeInteractiveElements(): void {
       const el = tabs[i];
       // Ignora links que possuem href para outras páginas
       if (el.tagName === 'A' && el.getAttribute('href') && !el.getAttribute('href')?.startsWith('#')) {
+        continue;
+      }
+      // Ignora chips e filtros dinâmicos de feeds como YouTube que interrompem ou resetam o grid
+      if (el.closest('yt-chip-cloud-chip-renderer, ytd-feed-filter-chip-bar-renderer, [class*="chip"]')) {
         continue;
       }
       try {

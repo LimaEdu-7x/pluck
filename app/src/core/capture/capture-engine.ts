@@ -383,18 +383,17 @@ export async function capturePageHtml(
         lowerTarget.includes('.eot');
       const typeHint = isFont ? 'font' : 'image';
 
+      // SPEC-v12: no modo Só HTML, imagens no CSS mantêm a URL remota absoluta do site online
+      if (!isFont) {
+        urlReplacements.push({ fullMatch, replacement: `url("${fullTargetUrl}")` });
+        continue;
+      }
+
       const dataUrl = await getAssetDataUrl(fullTargetUrl, typeHint);
       if (dataUrl) {
         urlReplacements.push({ fullMatch, replacement: `url("${dataUrl}")` });
       } else {
-        if (isFont) {
-          urlReplacements.push({ fullMatch, replacement: `url("")` });
-        } else {
-          urlReplacements.push({
-            fullMatch,
-            replacement: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E")`
-          });
-        }
+        urlReplacements.push({ fullMatch, replacement: `url("${fullTargetUrl}")` });
       }
     }
 
@@ -423,6 +422,13 @@ export async function capturePageHtml(
       const fullUrl = new URL(rawHref, data.baseURI).href;
       const fetched = await fetchResourceSafe(fullUrl, 15000, allowLocalhost);
       if (fetched && fetched.data.length > 0) {
+        if (fetched.data.length > MAX_SINGLE_FILE_ASSET_BYTES) {
+          omittedCount++;
+          omittedBytes += fetched.data.length;
+          omittedReasons.push(`CSS externo excedeu limite de 2 MB (${(fetched.data.length / (1024 * 1024)).toFixed(1)} MB): ${fullUrl}`);
+          link.remove();
+          continue;
+        }
         const rawCss = new TextDecoder().decode(fetched.data);
         const processedCss = await inlineCssUrls(rawCss, fullUrl);
         const styleEl = doc.createElement('style');
@@ -461,12 +467,12 @@ export async function capturePageHtml(
     }
   }
 
-  // 4. Processa tags <img>
+  // 4. Processa tags <img> (SPEC-v12: imagens apontam direto para a URL absoluta do site online)
   const imgElements = Array.from(doc.querySelectorAll('img')) as HTMLImageElement[];
   for (const img of imgElements) {
     step++;
     let rawSrc = img.getAttribute('src');
-    const dataSrc = img.getAttribute('data-src') || img.getAttribute('data-original');
+    const dataSrc = img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-thumb');
     if ((!rawSrc || rawSrc.startsWith('data:image/gif') || rawSrc.length < 50) && dataSrc) {
       rawSrc = dataSrc;
     }
@@ -477,62 +483,83 @@ export async function capturePageHtml(
       onProgress(step, totalSteps, `Imagem: ${(rawSrc || '').split('/').pop() || 'img'}`);
     }
 
-    let inlinedImgUrl: string | null = null;
-    if (rawSrc) {
-      try {
-        const fullUrl = new URL(rawSrc, data.baseURI).href;
-        inlinedImgUrl = await getAssetDataUrl(fullUrl, 'image');
-      } catch {}
-    }
-
-    if (!inlinedImgUrl && rawSrcset) {
-      const candidates = rawSrcset.split(',').map((s) => s.trim()).filter(Boolean);
-      for (let i = candidates.length - 1; i >= 0; i--) {
-        const candidateUrl = candidates[i].split(/\s+/)[0];
+    let absoluteUrl: string | null = null;
+    if (rawSrc && !rawSrc.startsWith('javascript:')) {
+      if (rawSrc.startsWith('data:')) {
+        absoluteUrl = rawSrc;
+      } else {
         try {
-          const fullUrl = new URL(candidateUrl, data.baseURI).href;
-          inlinedImgUrl = await getAssetDataUrl(fullUrl, 'image');
-          if (inlinedImgUrl) break;
+          absoluteUrl = new URL(rawSrc, data.baseURI).href;
         } catch {}
       }
     }
 
-    if (inlinedImgUrl) {
-      img.setAttribute('src', inlinedImgUrl);
-      img.setAttribute('srcset', inlinedImgUrl);
-    } else {
-      img.setAttribute(
-        'src',
-        "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E"
-      );
-      img.removeAttribute('srcset');
+    if (absoluteUrl) {
+      img.setAttribute('src', absoluteUrl);
+      inlinedImagesCount++;
+    }
+
+    if (rawSrcset) {
+      const candidates = rawSrcset.split(',').map((s) => s.trim()).filter(Boolean);
+      const absCandidates: string[] = [];
+      for (const cand of candidates) {
+        const parts = cand.split(/\s+/);
+        const cUrl = parts[0];
+        const descriptor = parts.slice(1).join(' ');
+        if (cUrl.startsWith('data:')) {
+          absCandidates.push(cand);
+        } else {
+          try {
+            const abs = new URL(cUrl, data.baseURI).href;
+            absCandidates.push(descriptor ? `${abs} ${descriptor}` : abs);
+          } catch {
+            absCandidates.push(cand);
+          }
+        }
+      }
+      if (absCandidates.length > 0) {
+        img.setAttribute('srcset', absCandidates.join(', '));
+      }
     }
 
     img.removeAttribute('data-src');
     img.removeAttribute('data-srcset');
+    img.removeAttribute('data-original');
+    img.removeAttribute('data-thumb');
     img.setAttribute('loading', 'eager');
   }
 
-  // 5. Processa <source> (em <picture> e <video>)
+  // 5. Processa <source> (em <picture> e <video>): URLs absolutas remotas
   const sourceElements = Array.from(doc.querySelectorAll('source')) as HTMLSourceElement[];
   for (const srcEl of sourceElements) {
     const rawSrcset = srcEl.getAttribute('srcset');
     if (rawSrcset) {
       const candidates = rawSrcset.split(',').map((s) => s.trim()).filter(Boolean);
-      let inlined: string | null = null;
-      for (let i = candidates.length - 1; i >= 0; i--) {
-        const cUrl = candidates[i].split(/\s+/)[0];
-        try {
-          const fullUrl = new URL(cUrl, data.baseURI).href;
-          inlined = await getAssetDataUrl(fullUrl, 'image');
-          if (inlined) break;
-        } catch {}
+      const absCandidates: string[] = [];
+      for (const cand of candidates) {
+        const parts = cand.split(/\s+/);
+        const cUrl = parts[0];
+        const descriptor = parts.slice(1).join(' ');
+        if (cUrl.startsWith('data:')) {
+          absCandidates.push(cand);
+        } else {
+          try {
+            const abs = new URL(cUrl, data.baseURI).href;
+            absCandidates.push(descriptor ? `${abs} ${descriptor}` : abs);
+          } catch {
+            absCandidates.push(cand);
+          }
+        }
       }
-      if (inlined) {
-        srcEl.setAttribute('srcset', inlined);
-      } else {
-        srcEl.remove();
+      if (absCandidates.length > 0) {
+        srcEl.setAttribute('srcset', absCandidates.join(', '));
       }
+    }
+    const rawSrc = srcEl.getAttribute('src');
+    if (rawSrc && !rawSrc.startsWith('data:') && !rawSrc.startsWith('javascript:')) {
+      try {
+        srcEl.setAttribute('src', new URL(rawSrc, data.baseURI).href);
+      } catch {}
     }
   }
 
@@ -579,7 +606,7 @@ export async function capturePageHtml(
     doc.head.appendChild(bypassStyle);
   }
 
-  // 7. Injeta CSP estrita offline para arquivo único (img/font/media data:, style unsafe-inline)
+  // 7. Injeta CSP estrita offline para arquivo único (img/font/media remotas e data:, style unsafe-inline)
   let head = doc.head;
   if (!head) {
     head = doc.createElement('head');
@@ -592,7 +619,7 @@ export async function capturePageHtml(
   metaCsp.setAttribute('http-equiv', 'Content-Security-Policy');
   metaCsp.setAttribute(
     'content',
-    "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; media-src data:; base-uri 'none'; form-action 'none'"
+    "default-src 'none'; img-src https: http: data:; font-src https: http: data:; style-src 'unsafe-inline'; media-src https: http: data:; base-uri 'none'; form-action 'none'"
   );
   head.insertBefore(metaCsp, head.firstChild);
 

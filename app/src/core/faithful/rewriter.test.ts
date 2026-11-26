@@ -477,4 +477,62 @@ describe('Rewriter Fiel: Reescrita Completa de Documento HTML e CSS', () => {
     expect(rewritten).toContain('url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")');
     expect(rewritten).not.toContain('icon-loading.svg');
   });
+
+  it('reescreve imagens dentro de Declarative Shadow DOM (<template shadowrootmode="open">)', () => {
+    const pageUrl = 'https://www.youtube.com/';
+    const html = `
+      <html>
+        <head></head>
+        <body>
+          <yt-img-shadow>
+            <template shadowrootmode="open">
+              <img id="img" src="https://i.ytimg.com/vi/abc/hq720.jpg?sqp=test" loading="lazy">
+            </template>
+          </yt-img-shadow>
+        </body>
+      </html>
+    `;
+    const map = new Map<string, string>();
+    map.set(
+      'https://i.ytimg.com/vi/abc/hq720.jpg?sqp=test',
+      '_external/i.ytimg.com/vi/abc/hq720.jpg'
+    );
+
+    const rewritten = rewriteHtmlDocument(html, pageUrl, 'index.html', map);
+    expect(rewritten).toContain('_external/i.ytimg.com/vi/abc/hq720.jpg');
+    expect(rewritten).toContain('loading="eager"');
+  });
+
+  it('mapeia URLs de stylesheet sem extensão do YouTube (/ss/) e Google Fonts (/css2) para .css', () => {
+    const ytCss = 'https://www.youtube.com/s/_/ytmainappweb/_/ss/k=ytmainappweb.kevlar_base.hnYKxBnuqUc.L.B1.O/am=AAAAAAAgwACAAOwJ/d=0/br=1/rs=AGKMywF7Mm6pMAnPGtU6BFN339VmxEnlQQ';
+    const mappedYt = mapUrlToZipPath(ytCss, 'https://www.youtube.com/');
+    expect(mappedYt.endsWith('.css')).toBe(true);
+
+    const gFonts = 'https://fonts.googleapis.com/css2?family=Roboto:wght@400;700';
+    const mappedGFonts = mapUrlToZipPath(gFonts, 'https://www.youtube.com/');
+    expect(mappedGFonts).toContain('_external/fonts.googleapis.com/');
+    expect(mappedGFonts.endsWith('.css')).toBe(true);
+  });
+
+  it('desliga scripts de aplicação em modo foto fiel para SPAs pesadas', () => {
+    const pageUrl = 'https://www.youtube.com/';
+    const html = `
+      <html>
+        <head>
+          <link rel="preload" href="/app.js" as="script">
+          <script src="/app.js"></script>
+          <script>window.__INITIAL_DATA__ = { foo: 'bar' };</script>
+        </head>
+        <body>
+          <ytd-app><h1>Conteúdo YouTube</h1></ytd-app>
+        </body>
+      </html>
+    `;
+    const map = new Map<string, string>();
+    const rewritten = rewriteHtmlDocument(html, pageUrl, 'index.html', map, false, true);
+    expect(rewritten).toContain('<h1>Conteúdo YouTube</h1>');
+    expect(rewritten).not.toContain('<script src="/app.js"></script>');
+    expect(rewritten).not.toContain('window.__INITIAL_DATA__');
+    expect(rewritten).not.toContain('as="script"');
+  });
 });

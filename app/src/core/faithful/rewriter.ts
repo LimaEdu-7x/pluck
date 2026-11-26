@@ -36,11 +36,33 @@ export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
     let cleanPath = url.pathname.replace(/^\/+/, '');
     if (!cleanPath) cleanPath = 'index.html';
 
-    // Se o pathname não tem extensão e é uma página/rota, adiciona .html ou index.html
+    // Se o pathname não tem extensão e é uma página/rota, adiciona .html ou extensão correta baseada na URL
     const hasExtension = /\.[a-zA-Z0-9]{1,8}$/.test(cleanPath);
     if (!hasExtension) {
       if (url.hostname.includes('typekit') || url.pathname.includes('/af/') || url.searchParams.has('fvd')) {
         cleanPath += '.woff2';
+      } else if (
+        url.pathname.includes('/ss/') ||
+        url.pathname.endsWith('/ss') ||
+        url.pathname.includes('/css') ||
+        url.hostname.includes('fonts.googleapis.com') ||
+        url.searchParams.has('family') ||
+        urlStr.includes('.css?')
+      ) {
+        cleanPath += '.css';
+      } else if (
+        url.pathname.includes('/js/') ||
+        url.pathname.includes('/jsbin/') ||
+        url.pathname.endsWith('/js') ||
+        urlStr.includes('.js?')
+      ) {
+        cleanPath += '.js';
+      } else if (
+        url.hostname.includes('ggpht.com') ||
+        url.hostname.includes('ytimg.com') ||
+        url.pathname.includes('/vi/')
+      ) {
+        cleanPath += '.jpg';
       } else {
         cleanPath += cleanPath.endsWith('/') ? 'index.html' : '.html';
       }
@@ -143,6 +165,22 @@ export function dropCdnGuards(doc: Document): void {
   }
 }
 
+// Helper para selecionar nós no Light DOM e dentro de fragmentos de <template> (Declarative Shadow DOM)
+export function queryAllWithTemplates<T extends Element = Element>(
+  root: Document | DocumentFragment | Element,
+  selector: string
+): T[] {
+  const result: T[] = Array.from(root.querySelectorAll<T>(selector));
+  const templates = root.querySelectorAll('template');
+  for (let i = 0; i < templates.length; i++) {
+    const tmpl = templates[i] as HTMLTemplateElement;
+    if (tmpl.content) {
+      result.push(...queryAllWithTemplates<T>(tmpl.content, selector));
+    }
+  }
+  return result;
+}
+
 // Normaliza imagens para carregamento imediato offline e corrige srcset
 export function normalizeImages(
   doc: Document,
@@ -150,7 +188,7 @@ export function normalizeImages(
   urlToZipMap: Map<string, string>,
   pageUrl?: string
 ): void {
-  const imgs = doc.querySelectorAll('img');
+  const imgs = queryAllWithTemplates<HTMLImageElement>(doc, 'img');
   for (let i = 0; i < imgs.length; i++) {
     const img = imgs[i];
 
@@ -238,8 +276,8 @@ export function normalizeImages(
     }
   }
 
-  // Normaliza tags <source> em <picture>
-  const sources = doc.querySelectorAll('source');
+  // Normaliza tags <source> em <picture> e <template>
+  const sources = queryAllWithTemplates<HTMLSourceElement>(doc, 'source');
   for (let i = 0; i < sources.length; i++) {
     const srcEl = sources[i];
     const src = srcEl.getAttribute('src');
@@ -403,7 +441,8 @@ export function rewriteHtmlDocument(
   pageUrl: string,
   currentZipPath: string,
   urlToZipMap: Map<string, string>,
-  isSinglePageScope = false
+  isSinglePageScope = false,
+  disableAppScripts = false
 ): string {
   // Protege contra bug do parser do happy-dom onde tags <style> aninhadas em <svg> fecham prematuramente o body
   const svgStyleStore: string[] = [];
@@ -430,6 +469,18 @@ export function rewriteHtmlDocument(
     dnsLinks[i].remove();
   }
 
+  // Se modo foto fiel estiver ativo para SPAs pesadas (ex: YouTube), desativa scripts da aplicação
+  if (disableAppScripts) {
+    const scriptsToRemove = doc.querySelectorAll('script:not(#__pluck_replay_shim__)');
+    for (let i = 0; i < scriptsToRemove.length; i++) {
+      scriptsToRemove[i].remove();
+    }
+    const preloadsToRemove = doc.querySelectorAll('link[rel="preload"][as="script"]');
+    for (let i = 0; i < preloadsToRemove.length; i++) {
+      preloadsToRemove[i].remove();
+    }
+  }
+
   // Reescreve <link rel="stylesheet">, <link rel="icon">, etc.
   const links = doc.querySelectorAll('link[href]');
   for (let i = 0; i < links.length; i++) {
@@ -439,10 +490,21 @@ export function rewriteHtmlDocument(
     try {
       const resolvedUrl = new URL(href, pageUrl).href;
       const cleanUrl = resolvedUrl.split('?')[0];
-      const targetZip =
+      let targetZip =
         urlToZipMap.get(resolvedUrl) ||
         urlToZipMap.get(href) ||
         urlToZipMap.get(cleanUrl);
+
+      // Tenta correspondência flexível para stylesheets de CDN (ex: fonts.googleapis.com)
+      if (!targetZip && href.includes('fonts.googleapis.com')) {
+        for (const [orig, tz] of urlToZipMap.entries()) {
+          if (orig.includes('fonts.googleapis.com') && tz.endsWith('.css')) {
+            targetZip = tz;
+            break;
+          }
+        }
+      }
+
       if (targetZip) {
         const rel = targetZip.startsWith('_next/') ? '/' + targetZip : getRelativePath(currentZipPath, targetZip);
         el.setAttribute('href', rel);

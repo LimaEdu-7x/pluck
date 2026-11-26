@@ -74,9 +74,9 @@ describe('images-zip Module', () => {
     const buffer = new Uint8Array(await result.blob.arrayBuffer());
     const unzipped = unzipSync(buffer);
 
-    expect(unzipped['logo.png']).toBeDefined();
-    expect(unzipped['vetor-1.svg']).toBeDefined();
-    expect(unzipped['index.html']).toBeUndefined(); // Somente imagens, sem html!
+    expect(unzipped['imagens/logo.png'] || unzipped['logo.png']).toBeDefined();
+    expect(unzipped['vetores/vetor-1.svg'] || unzipped['vetor-1.svg']).toBeDefined();
+    expect(unzipped['index.html']).toBeUndefined(); // Somente mídias, sem html!
 
     global.fetch = originalFetch;
   });

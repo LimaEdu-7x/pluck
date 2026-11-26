@@ -9,734 +9,642 @@
 <body>
   <div class="side-panel-app" id="sidePanelRoot" role="region" aria-label="Pluck Painel Lateral">
     
-    <!-- TOP HEADER v11.1 (48 px) -->
-    <header class="panel-header">
-      <div class="brand-cluster-v11">
-        <span class="brand-pluck-v11">+ PLUCK V11.1</span>
+    <!-- TOP HEADER v12: Ícone + Nome Pluck + v0.2 esmaecido + Chip com bolinha centralizada -->
+    <header class="panel-header" id="panelHeader">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 256 256" width="18" height="18" fill="#FFFFFF" aria-hidden="true">
+          <path fill-rule="evenodd" d="M80 44H152L212 104V176A36 36 0 0 1 176 212H80A36 36 0 0 1 44 176V80A36 36 0 0 1 80 44Z M84 82h26a13 13 0 0 1 13 13v70a13 13 0 0 1-13 13H97a13 13 0 0 1-13-13zM150 78a34 34 0 1 1 0 68a34 34 0 1 1 0-68zM150 98a14 14 0 1 0 0 28a14 14 0 1 0 0-28z"/>
+          <path d="M170 30H214A12 12 0 0 1 226 42V86A12 12 0 0 1 206 94L162 50A12 12 0 0 1 170 30Z"/>
+        </svg>
+        <span class="brand-name">Pluck</span>
+        <span class="brand-ver" id="brandTag">v0.2</span>
       </div>
-      <div class="site-chip-container" style="position: relative;">
-        <button class="site-chip domain-pill" id="headerDomainPill" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Domínio da página ativa e status de conexão">
-          <div class="pulse-wrapper">
-            <div id="domainRing" class="ring-pulse-green"></div>
-            <div id="domainDot" class="status-dot dot-core-green"></div>
-          </div>
-          <span id="domainText" class="domain-label">aguardando...</span>
-          <svg class="chevron-icon tabler-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M6 9l6 6l6 -6" />
-          </svg>
-        </button>
 
-        <!-- POPOVER FLUTUANTE DE STATUS E INSPEÇÃO TÉCNICA (v11.1) -->
-        <div id="site-popover" class="site-popover" hidden role="dialog" aria-label="Inspeção da aba ativa">
-          <div class="popover-row header-row">
-            <span class="popover-badge">STATUS DO SITE</span>
-            <span id="popover-status-text" class="status-indicator">
-              <span class="mini-dot"></span> CONECTADO À ABA
-            </span>
-          </div>
-
-          <div class="url-box">
-            <span id="popover-full-url">—</span>
-          </div>
-
-          <div class="popover-row">
-            <span class="row-label">Resolução da janela:</span>
-            <span id="popover-resolution" class="row-value">1440×900 PX</span>
-          </div>
-
-          <div class="popover-row">
-            <span class="row-label">Elementos da página:</span>
-            <span id="popover-assets-status" class="row-value">100% CARREGADOS</span>
-          </div>
-
-          <button id="btn-switch-tab" class="btn-popover-action" type="button">
-            <svg class="tabler-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M7 10h14l-4 -4" /><path d="M17 14h-14l4 4" />
-            </svg>
-            Trocar de aba ativa
-          </button>
+      <div class="site-chip" id="headerDomainPill" role="status" aria-label="Status da aba ativa">
+        <div class="pulse-wrapper">
+          <div id="domainRing" class="ring-pulse-green"></div>
+          <div id="domainDot" class="dot-core-green"></div>
         </div>
+        <span id="domainText" class="site-domain">Sem página</span>
+      </div>
+
+      <!-- Elementos de compatibilidade preservados e ocultos para testes de segurança -->
+      <span id="securityBadge" style="display: none;">—</span>
+      <div id="site-popover" style="display: none;" hidden>
+        <span id="popover-status-text"></span>
+        <span id="popover-full-url"></span>
+        <span id="popover-resolution"></span>
+        <span id="popover-assets-status"></span>
       </div>
     </header>
 
-    <!-- SCROLLABLE BODY WITH 9 VIEW STATES -->
+    <!-- CORPO SCROLLÁVEL COM AS 4 TELAS PRINCIPAIS (INÍCIO, OPÇÕES, PROGRESSO, PRONTO) -->
     <main class="panel-body">
       
-      <!-- 1. INÍCIO VIEW (v11-01: ArtCraft P&B Impeccable) -->
+      <!-- 1. TELA INÍCIO (v12) -->
       <section class="view-state active" id="view-inicio" aria-label="Configuração de Captura">
-        <!-- Site Hero Title & Subtitle -->
+        <!-- Hero Title & Subtitle (SPEC-v12 aprovada) -->
         <div class="origin-hero-block">
-          <h1 class="origin-hero-title" id="originTitle">Aguardando aba...</h1>
-          <p class="origin-hero-sub" id="originHeroSub">Um clique. A página inteira copiada com animações e estilos para o seu disco.</p>
-          <!-- Elementos de compatibilidade preservados para testes e integração com o motor -->
+          <h1 class="origin-hero-title" id="originTitle">Como deseja arquivar?</h1>
+          <p class="origin-hero-sub" id="originHeroSub">Escolha o modo de captura para salvar esta página.</p>
           <span class="origin-url" id="originUrl" style="display: none;">—</span>
-          <span class="security-badge" id="securityBadge" style="display: none;">—</span>
         </div>
 
-        <!-- Metric Chips Strip (4 Tabler SVGs + Special Elite) -->
-        <div class="metrics-strip" id="metricsStrip" role="region" aria-label="Resumo do site">
-          <div class="metric-chip active">
-            <svg class="tabler-icon" width="13" height="13" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M15 8h.01"/>
-              <path d="M3 6a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v12a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3v-12z"/>
-              <path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l5 5"/>
-              <path d="M14 14l1 -1c.928 -.893 2.072 -.893 3 0l3 3"/>
-            </svg>
-            <span id="chipPhotos">48 FOTOS</span>
-          </div>
-
-          <div class="metric-chip">
-            <svg class="tabler-icon" width="13" height="13" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M4 20l3 -10a2 2 0 0 1 2 -1.5h6a2 2 0 0 1 2 1.5l3 10"/>
-              <path d="M14 14h-7"/>
-            </svg>
-            <span id="chipFonts">6 FONTES</span>
-          </div>
-
-          <div class="metric-chip">
-            <svg class="tabler-icon" width="13" height="13" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M14 3v4a1 1 0 0 0 1 1h4"/>
-              <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/>
-              <line x1="9" y1="9" x2="10" y2="9"/>
-              <line x1="9" y1="13" x2="15" y2="13"/>
-              <line x1="9" y1="17" x2="15" y2="17"/>
-            </svg>
-            <span id="chipPages">14 PÁGINAS</span>
-          </div>
-
-          <div class="metric-chip">
-            <svg class="tabler-icon" width="13" height="13" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-              <path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5"/>
-              <path d="M12 12l8 -4.5"/>
-              <path d="M12 12l0 9"/>
-              <path d="M12 12l-8 -4.5"/>
-            </svg>
-            <span id="chipSize">2.4 MB</span>
-          </div>
-        </div>
-
-        <!-- 4 Capture Action Options (v11) -->
-        <div class="mode-options-group" role="radiogroup" aria-label="Modo de extração v11">
-          <!-- 1. Página Completa com Animações (PADRÃO / RECOMENDADO) -->
+        <!-- 4 Modos de Captura da SPEC-v12 -->
+        <div class="mode-options-group" role="radiogroup" aria-label="Modo de extração v12">
+          <!-- 1. Esta página (cópia fiel) -->
           <div class="card interactive mode-card selected" id="mode-zip" role="radio" aria-checked="true" tabindex="0">
             <div class="mode-header">
               <div class="mode-left">
                 <span class="mode-radio"></span>
-                <span class="mode-title">Página Completa com Animações</span>
+                <span class="mode-title">Esta página (cópia fiel)</span>
               </div>
-              <span class="mode-badge recommended">RECOMENDADO</span>
+              <span class="mode-badge recommended">PADRÃO</span>
             </div>
-            <p class="mode-desc">Cópia fiel com estilos, transições e efeitos visuais</p>
+            <p class="mode-desc">Salva tudo: animações, estilos e fontes prontas para abrir sem internet.</p>
           </div>
 
-          <!-- 2. Pegar só um Pedaço (Mira visual) -->
-          <div class="card interactive mode-card" id="mode-piece" role="radio" aria-checked="false" tabindex="0">
+          <!-- 2. Só HTML -->
+          <div class="card interactive mode-card" id="mode-html" role="radio" aria-checked="false" tabindex="0">
             <div class="mode-header">
               <div class="mode-left">
                 <span class="mode-radio"></span>
-                <span class="mode-title">Pegar só um Pedaço</span>
+                <span class="mode-title">Só HTML</span>
               </div>
-              <span class="mode-badge badge-icon">
-                <svg class="tabler-icon" width="11" height="11" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                  <path d="M4 8v-2a2 2 0 0 1 2 -2h2"/>
-                  <path d="M4 16v2a2 2 0 0 0 2 2h2"/>
-                  <path d="M16 4h2a2 2 0 0 1 2 2v2"/>
-                  <path d="M16 20h2a2 2 0 0 0 2 -2v-2"/>
-                  <line x1="9" y1="12" x2="15" y2="12"/>
-                  <line x1="12" y1="9" x2="12" y2="15"/>
-                </svg>
-                MIRA
-              </span>
+              <span class="mode-badge">ARQUIVO ÚNICO</span>
             </div>
-            <p class="mode-desc">Mira com o mouse e baixa apenas a seção desejada</p>
+            <p class="mode-desc">1 arquivo leve (.html). Imagens e vídeos apontam direto para o site online.</p>
           </div>
 
-          <!-- 3. Mídias & Kit de Identidade -->
-          <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="0">
-            <div class="mode-header">
-              <div class="mode-left">
-                <span class="mode-radio"></span>
-                <span class="mode-title">Mídias &amp; Kit de Identidade</span>
-              </div>
-              <span class="mode-badge">MÍDIAS</span>
-            </div>
-            <p class="mode-desc">48 fotos originais e ícones vetoriais limpos</p>
-          </div>
-
-          <!-- 4. Varredura Completa do Site -->
+          <!-- 3. Site inteiro -->
           <div class="card interactive mode-card" id="mode-site" role="radio" aria-checked="false" tabindex="0">
             <div class="mode-header">
               <div class="mode-left">
                 <span class="mode-radio"></span>
-                <span class="mode-title">Varredura Completa do Site</span>
+                <span class="mode-title">Site inteiro</span>
               </div>
-              <span class="mode-badge">MULTI-PÁGINA</span>
+              <button type="button" class="mode-badge action-badge" id="btnConfigSite" aria-label="Opções do site inteiro">OPÇÕES →</button>
             </div>
-            <p class="mode-desc">Filtro de endereços e limite seguro de páginas</p>
+            <p class="mode-desc">Segue links internos do site (padrão: até 20 páginas em 2 níveis).</p>
           </div>
 
-          <!-- Compatibilidade com testes para mode-html -->
-          <div class="card interactive mode-card" id="mode-html" role="radio" aria-checked="false" tabindex="0" style="display: none;">
+          <!-- 4. Somente mídias -->
+          <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="0">
             <div class="mode-header">
               <div class="mode-left">
                 <span class="mode-radio"></span>
-                <span class="mode-title">HTML autossuficiente</span>
+                <span class="mode-title">Somente mídias</span>
               </div>
-              <span class="mode-badge">ARQUIVO ÚNICO</span>
+              <button type="button" class="mode-badge action-badge" id="btnConfigMidias" aria-label="Filtros de mídias">FILTROS →</button>
             </div>
-            <p class="mode-desc">Arquivo único (.html) com estilos e imagens embutidos.</p>
+            <p class="mode-desc">Imagens, vídeos, áudios e vetores SVG em pastas separadas.</p>
           </div>
+
           <div id="webglNotice" class="webgl-notice" role="alert" style="display: none;">
             Esta página usa WebGL/3D: o HTML único fica estático/incompleto; use Página completa em ZIP
           </div>
         </div>
 
-        <!-- Switches de Configuração (Rolar suavemente & Gravar cliques manuais) -->
-        <div class="card options-toggles-card">
-          <div class="toggle-row">
-            <div class="toggle-texts">
-              <span class="toggle-title">Rolar página suavemente</span>
-              <span class="toggle-desc">Carrega fotos e textos que aparecem ao rolar</span>
+        <!-- 2 Formas de Captura (SPEC-v12: Automático x Gravação manual com rádio exclusivo) -->
+        <div class="capture-mode-container" role="radiogroup" aria-label="Forma de captura">
+          <div class="section-label">FORMA DE CAPTURA</div>
+          
+          <div class="capture-option-row selected" id="optAutoRow" tabindex="0" role="radio" aria-checked="true">
+            <div class="radio-circle active" id="autoRadioCircle"><div class="radio-dot"></div></div>
+            <div class="option-content">
+              <div class="option-header">
+                <span class="act-title">Automático</span>
+                <span class="badge badge-green">RECOMENDADO</span>
+              </div>
+              <p class="desc-text">Recarrega e rola a página sozinho para carregar todo o conteúdo.</p>
             </div>
-            <div class="switch-track" id="autoSwitch" role="switch" aria-checked="true" tabindex="0" aria-label="Rolar página suavemente">
-              <span class="switch-knob"></span>
-            </div>
-          </div>
-          <div class="toggle-row">
-            <div class="toggle-texts">
-              <span class="toggle-title">Gravar cliques manuais</span>
-              <span class="toggle-desc">Salva menus hambúrguer e abas abertas</span>
-            </div>
-            <div class="switch-track off" id="recordClicksSwitch" role="switch" aria-checked="false" tabindex="0" aria-label="Gravar cliques manuais">
-              <span class="switch-knob"></span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Resumo do que será salvo -->
-        <div class="card summary-box-v11" id="packageSummaryCard">
-          <div class="summary-top-row">
-            <span class="summary-label-v11">+ RESUMO DO QUE SERÁ SALVO</span>
-            <span class="summary-size-v11" id="summaryPackageSize">2.4 MB</span>
-          </div>
-          <p class="summary-desc-v11" id="summaryPackageText">48 fotos originais · 6 fontes · Efeitos visuais e menus prontos para abrir offline.</p>
-        </div>
-
-        <!-- Card Pasta de Salvamento e Como Abrir (v11.1) -->
-        <div class="card save-folder-card-v11" id="saveFolderCard">
-          <div class="save-folder-header">
-            <div class="save-folder-title-wrap">
-              <svg class="tabler-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-                <path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2"/>
-              </svg>
-              <span class="save-folder-label">PASTA DE SALVAMENTO</span>
-            </div>
-            <span class="save-folder-badge">PADRÃO</span>
+            <span class="switch-track" id="autoSwitch" style="display: none;" role="switch" aria-checked="true"><span class="switch-knob"></span></span>
           </div>
 
-          <div class="save-folder-path" id="saveFolderPath">Downloads / getartcraft.com.zip</div>
+          <div class="divider"></div>
 
-          <div class="save-folder-tips">
-            <div class="save-tip-row">
-              <svg class="tabler-icon tip-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3ECF8E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M5 12l5 5l10 -10"/>
-              </svg>
-              <span><strong>Como abrir:</strong> Basta dar 2 cliques em <code class="code-inline">index.html</code> para ver o site no navegador, mesmo sem internet.</span>
+          <div class="capture-option-row" id="optRecRow" tabindex="0" role="radio" aria-checked="false">
+            <div class="radio-circle" id="recRadioCircle"></div>
+            <div class="option-content">
+              <div class="option-header">
+                <span class="act-title">Gravação manual</span>
+                <span class="badge badge-subtle">INTERATIVO</span>
+              </div>
+              <p class="desc-text">Você clica e rola na página; o Pluck salva tudo o que aparecer até você parar.</p>
             </div>
-
-            <div class="save-tip-row">
-              <svg class="tabler-icon tip-shield" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3ECF8E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3"/>
-                <path d="M9 12l2 2l4 -4"/>
-              </svg>
-              <span><strong>Proteção de dados:</strong> senhas, logins digitados e dados de formulários são apagados antes de salvar o arquivo.</span>
-            </div>
+            <span class="switch-track off" id="recordClicksSwitch" style="display: none;" role="switch" aria-checked="false"><span class="switch-knob"></span></span>
           </div>
         </div>
 
-        <!-- Hidden Scope Tabs & Controls mantidos para compatibilidade com os testes -->
+        <!-- Elementos de compatibilidade mantidos ocultos para testes de escopo/limites -->
         <div style="display: none;" aria-hidden="true">
           <nav class="scope-tabs" role="tablist">
             <button type="button" class="scope-tab active" id="tab-esta" role="tab" aria-selected="true">Esta página</button>
             <button type="button" class="scope-tab" id="tab-vinc" role="tab" aria-selected="false">Páginas vinculadas</button>
             <button type="button" class="scope-tab" id="tab-site" role="tab" aria-selected="false">Site inteiro</button>
           </nav>
-          <p class="scope-subtitle" id="scopeSub">Captura fiel da aba atual com recursos renderizados no DOM.</p>
+          <p class="scope-subtitle" id="scopeSub"></p>
           <span class="autoscroll-dot" id="autoDot"></span>
-          <div class="card limits-card" id="limitsBox" style="display: none;">
-            <div class="limits-chips" id="pagsChips"></div>
-            <div class="limits-chips" id="mbChips"></div>
-            <div class="switch-track off" id="subdomainSwitch" role="switch" aria-checked="false" tabindex="0">
+          <div class="card limits-card" id="limitsBox">
+            <div id="pagsChips"></div>
+            <div id="mbChips"></div>
+            <span id="subdomainSwitch" class="switch-track off"></span>
+          </div>
+          <div id="targetBox"></div>
+          <div id="externalDomainsBox"><div id="externalDomainsList"></div></div>
+        </div>
+      </section>
+
+      <!-- 2. TELA OPÇÕES (v12) -->
+      <section class="view-state" id="view-opcoes" aria-label="Opções de Captura">
+        <button type="button" class="btn-ghost-back" id="btnBackFromOptions" aria-label="Voltar ao início">
+          <svg class="tabler-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12l-14 0" /><path d="M11 18l-6 -6" /><path d="M11 6l6 6" /></svg>
+          <span>Voltar ao Início</span>
+        </button>
+        <div style="margin-bottom: 12px; position: relative; z-index: 2;">
+          <div class="type-special" id="optionsDetectedBadge" style="font-size: 10.5px; color: #3ECF8E; margin-bottom: 3px; display: none;">+ DETECTADO NA PÁGINA</div>
+          <h2 class="title-display" id="optionsViewTitle" style="margin-bottom: 3px;">Opções de Site inteiro</h2>
+          <p class="desc-text" id="optionsViewSub">Defina os limites de navegação para varrer as páginas internas.</p>
+        </div>
+
+        <!-- 2.1 Subview Opções de Site Inteiro -->
+        <div class="options-subview active" id="subview-opcoes-site">
+          <div class="card options-card">
+            <span class="options-group-title">QUANTIDADE MÁXIMA DE PÁGINAS</span>
+            <div class="chips-selector" id="sitePagesChips">
+              <span class="chip-option" data-val="10">10 pág</span>
+              <span class="chip-option active" data-val="20">20 pág</span>
+              <span class="chip-option" data-val="50">50 pág</span>
+              <span class="chip-option" data-val="999">Sem limite</span>
+            </div>
+          </div>
+
+          <div class="card options-card">
+            <span class="options-group-title">PROFUNDIDADE DE LINKS</span>
+            <div class="chips-selector" id="siteDepthChips">
+              <span class="chip-option" data-val="1">1 nível</span>
+              <span class="chip-option active" data-val="2">2 níveis</span>
+              <span class="chip-option" data-val="999">Sem limite</span>
+            </div>
+          </div>
+
+          <div class="card options-card toggle-card">
+            <div class="toggle-texts">
+              <span class="act-title">Incluir subdomínios</span>
+              <span class="desc-text">Rastreia também blogs e apps do mesmo domínio</span>
+            </div>
+            <div class="switch-track off" id="siteSubdomainsSwitch" role="switch" aria-checked="false">
               <span class="switch-knob"></span>
             </div>
           </div>
-          <div class="card limits-card" id="externalDomainsBox" style="display: none;">
-            <div id="externalDomainsList"></div>
+        </div>
+
+        <!-- 2.2 Subview Opções de Mídias -->
+        <div class="options-subview" id="subview-opcoes-midias" style="display: none;">
+          <div class="card options-card">
+            <span class="options-group-title">TIPOS DE MÍDIA A EXTRAIR</span>
+            <div class="media-filters-list">
+              <label class="media-card active" id="mediaCardImg">
+                <input type="checkbox" id="mediaCheckImg" checked class="sr-only">
+                <div class="media-info">
+                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div>
+                    <div class="act-title">Imagens</div>
+                    <div class="media-sub">PNG, JPG, WebP, GIF, AVIF</div>
+                  </div>
+                </div>
+                <span class="folder-tag">/IMAGENS</span>
+              </label>
+
+              <label class="media-card active" id="mediaCardSvg">
+                <input type="checkbox" id="mediaCheckSvg" checked class="sr-only">
+                <div class="media-info">
+                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div>
+                    <div class="act-title">Vetores SVG</div>
+                    <div class="media-sub">Ícones e ilustrações limpos</div>
+                  </div>
+                </div>
+                <span class="folder-tag">/VETORES</span>
+              </label>
+
+              <label class="media-card active" id="mediaCardVid">
+                <input type="checkbox" id="mediaCheckVid" checked class="sr-only">
+                <div class="media-info">
+                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div>
+                    <div class="act-title">Vídeos</div>
+                    <div class="media-sub">MP4, WebM (sem DRM)</div>
+                  </div>
+                </div>
+                <span class="folder-tag">/VIDEOS</span>
+              </label>
+
+              <label class="media-card active" id="mediaCardAud">
+                <input type="checkbox" id="mediaCheckAud" checked class="sr-only">
+                <div class="media-info">
+                  <div class="custom-check checked"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
+                  <div>
+                    <div class="act-title">Áudios</div>
+                    <div class="media-sub">MP3, WAV, OGG, M4A</div>
+                  </div>
+                </div>
+                <span class="folder-tag">/AUDIOS</span>
+              </label>
+            </div>
           </div>
-          <div class="card limits-card" id="targetBox"></div>
-          <div class="summary-text-box" id="scopeSummary">Captura restrita à aba ativa (1 página)</div>
+
+          <div class="card options-card">
+            <span class="options-group-title">QUANTIDADE MÁXIMA</span>
+            <div class="chips-selector" id="mediaCountChips">
+              <span class="chip-option" data-val="50">50</span>
+              <span class="chip-option" data-val="100">100</span>
+              <span class="chip-option active" data-val="200">200 mídias</span>
+              <span class="chip-option" data-val="999">Sem limite</span>
+            </div>
+          </div>
+
+          <div class="card options-card">
+            <span class="options-group-title">TAMANHO MÁXIMO POR ARQUIVO</span>
+            <div class="chips-selector" id="mediaSizeChips">
+              <span class="chip-option" data-val="10">10 MB</span>
+              <span class="chip-option" data-val="25">25 MB</span>
+              <span class="chip-option active" data-val="50">50 MB</span>
+              <span class="chip-option" data-val="999">Sem limite</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2.3 Subview Opções de Rolagem Infinita -->
+        <div class="options-subview" id="subview-opcoes-rolagem" style="display: none; flex-direction: column; gap: 7px; margin-bottom: 12px; position: relative; z-index: 2;">
+          <div class="card interactive mode-card selected" id="scrollCardScreens" data-val="10" role="radio" aria-checked="true">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; width: 100%;">
+              <div style="display: flex; align-items: flex-start; gap: 8px;">
+                <div class="radio-circle active" style="margin-top: 2px;"><div class="radio-dot"></div></div>
+                <div>
+                  <div class="act-title">Rolar até 10 telas</div>
+                  <div class="desc-text" style="margin-top: 1px;">Ideal para a maioria dos sites, cobrindo os posts e seções principais.</div>
+                </div>
+              </div>
+              <span class="type-special" style="font-size: 10px; border: 1px solid #FFFFFF; padding: 2px 5px; border-radius: 2px; white-space: nowrap;">PADRÃO</span>
+            </div>
+          </div>
+
+          <div class="card interactive mode-card" id="scrollCardTime" data-val="30" role="radio" aria-checked="false">
+            <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%;">
+              <div class="radio-circle" style="margin-top: 2px;"></div>
+              <div>
+                <div class="act-title">Rolar por tempo (30 segundos)</div>
+                <div class="desc-text" style="margin-top: 1px;">Continua rolando por 30 segundos e depois inicia o salvamento.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card interactive mode-card" id="scrollCardUnlimited" data-val="999" role="radio" aria-checked="false">
+            <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%;">
+              <div class="radio-circle" style="margin-top: 2px;"></div>
+              <div>
+                <div class="act-title">Sem limite (até o fim)</div>
+                <div class="desc-text" style="margin-top: 1px;">Rola até não haver mais conteúdo novo ou até você clicar em Parar.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chips-selector sr-only" id="scrollLimitChips">
+            <span class="chip-option active" data-val="10">10 telas</span>
+            <span class="chip-option" data-val="30">30s</span>
+            <span class="chip-option" data-val="999">Sem limite</span>
+          </div>
+        </div>
+
+        <div class="options-footer-action">
+          <button type="button" class="btn-primary" id="btnSaveOptions">Salvar e voltar</button>
         </div>
       </section>
 
-      <!-- 2. ROLANDO VIEW -->
-      <section class="view-state" id="view-rolando" aria-label="Rolando a página">
-        <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot"></span>
-            <span>Rolando a página para carregar tudo...</span>
-          </div>
-          <span class="state-status-sub">Disparando lazy-loading e IntersectionObserver</span>
+      <!-- 3. TELA PROGRESSO / BAIXANDO (v12) -->
+      <section class="view-state" id="view-baixando" aria-label="Progresso da Captura">
+        <div class="progress-hero">
+          <span class="progress-pct-huge" id="downPct">0%</span>
+          <span class="progress-status-sub" id="downFile">Iniciando captura...</span>
         </div>
 
-        <div class="card progress-box">
-          <div class="prog-top">
-            <span class="prog-lbl">Progresso da rolagem:</span>
-            <span class="prog-pct" id="scrollPct">0 de 0 px (0%)</span>
-          </div>
-          <div class="prog-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-            <div class="prog-fill" id="scrollFill" style="width: 0%;"></div>
-          </div>
-          <span class="prog-active-file" id="scrollStepNote">Iniciando rolagem suave do DOM...</span>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="downFill" style="width: 0%;"></div>
         </div>
 
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">MÉTRICAS MEDIDAS DO DOM</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Posição vertical:</span>
-              <span class="metrics-val" id="scrollVerticalPos">0 px de 0 px</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Imagens requisitadas:</span>
-              <span class="metrics-val" id="scrollImagesCount">0 imagens carregadas pelo DOM</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Passos executados:</span>
-              <span class="metrics-val" id="scrollStepsCount">0 passos de rolagem</span>
-            </div>
+        <div class="card metrics-card-v12">
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Páginas:</span>
+            <span class="m-val" id="cntPages">1 de 1</span>
           </div>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 4px; display: block;">O QUE FAZER AGORA</span>
-          <p class="limits-footnote" style="color: var(--text);">Aguarde a rolagem atingir o rodapé ou pule agora para salvar os recursos carregados até este momento.</p>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Recursos:</span>
+            <span class="m-val" id="cntRes">0 arquivos</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Volume transferido:</span>
+            <span class="m-val" id="cntMb">0,0 MB</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Tempo decorrido:</span>
+            <span class="m-val" id="cntTime">00:00</span>
+          </div>
         </div>
       </section>
 
-      <!-- 3. ANALISANDO VIEW -->
-      <section class="view-state" id="view-analisando" aria-label="Analisando páginas">
-        <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot"></span>
-            <span>Analisando páginas e dependências...</span>
-          </div>
-          <span class="state-status-sub">Mapeando estrutura do DOM e fila de URLs internas</span>
+      <!-- 3b. ROLANDO VIEW (Autoscroll compatível com v12) -->
+      <section class="view-state" id="view-rolando" aria-label="Rolagem automática da página">
+        <div class="progress-hero">
+          <span class="progress-pct-huge" id="scrollPct">0%</span>
+          <span class="progress-status-sub" id="scrollStepNote">Rolando página para carregar conteúdo...</span>
         </div>
 
-        <div class="card">
-          <div class="origin-info">
-            <span class="origin-title" id="analisandoPagesCount" style="font-size: 13px;">1 página detectada</span>
-            <span class="origin-url" id="analisandoResCount">Mapeando recursos no domínio...</span>
-          </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="scrollFill" style="width: 0%;"></div>
         </div>
 
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">FILA DE RASTREAMENTO DO CRAWLER</span>
-          <div class="metrics-table" id="analisandoQueueList">
-            <div class="metrics-row">
-              <span class="metrics-lbl"><strong style="color: var(--accent);">[Pág 1]</strong> / (Página Inicial)</span>
-              <span class="metrics-val" style="color: var(--accent);">analisando nós do DOM...</span>
-            </div>
+        <div class="card metrics-card-v12">
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Posição vertical:</span>
+            <span class="m-val" id="scrollVerticalPos">0 px</span>
           </div>
-        </div>
-
-        <div class="summary-text-box" id="analisandoSummary">Varredura em andamento...</div>
-      </section>
-
-      <!-- 4. BAIXANDO VIEW -->
-      <section class="view-state" id="view-baixando" aria-label="Baixando recursos">
-        <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot"></span>
-            <span>Baixando e compactando recursos...</span>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Imagens ativadas:</span>
+            <span class="m-val" id="scrollImagesCount">0 imagens</span>
           </div>
-          <span class="state-status-sub">Processamento local com motor fflate</span>
-        </div>
-
-        <div class="card progress-box">
-          <div class="prog-top">
-            <span class="prog-lbl">Progresso da captura:</span>
-            <span class="prog-pct" id="downPct">0% CONCLUÍDO</span>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Passos de rolagem:</span>
+            <span class="m-val" id="scrollStepsCount">0 passos</span>
           </div>
-          <div class="prog-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-            <div class="prog-fill" id="downFill" style="width: 0%;"></div>
-          </div>
-          <span class="prog-active-file" id="downFile">Iniciando captura de recursos...</span>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">MÉTRICAS DA TRANSFERÊNCIA</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Páginas processadas:</span>
-              <span class="metrics-val" id="cntPages">1 de 1 página (100%)</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Recursos salvos:</span>
-              <span class="metrics-val" id="cntRes">0 de 0 arquivos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Volume transferido:</span>
-              <span class="metrics-val" id="cntMb">0,0 MB transferidos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Tempo decorrido:</span>
-              <span class="metrics-val" id="cntTime">00:00 decorridos</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" id="downNextBox">
-          <span class="limits-title" style="color: var(--accent); margin-bottom: 4px; display: block;">Próximo na fila de download:</span>
-          <span class="origin-title" id="downNextTitle">Processando página ativa</span>
-          <span class="origin-url" id="downNextDesc">Gravando arquivos no pacote local</span>
         </div>
       </section>
 
-      <!-- 5. PAUSADO VIEW -->
-      <section class="view-state" id="view-pausado" aria-label="Download em pausa">
-        <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot warn"></span>
-            <span style="color: var(--status-warn);">Download em pausa</span>
+      <!-- 3c. ANALISANDO VIEW (Compatível com v12) -->
+      <section class="view-state" id="view-analisando" aria-label="Análise e mapeamento">
+        <div class="progress-hero">
+          <span class="progress-pct-huge" style="font-size: 28px;">Varrendo</span>
+          <span class="progress-status-sub" id="analisandoSummary">Mapeando páginas e recursos...</span>
+        </div>
+        <div class="card metrics-card-v12">
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Páginas descobertas:</span>
+            <span class="m-val" id="analisandoPagesCount">1 página</span>
           </div>
-          <span class="state-status-sub">A captura foi interrompida com segurança pelo usuário</span>
-        </div>
-
-        <div class="card" style="background: var(--warn-bg); border-color: var(--warn-border);">
-          <span class="origin-title" style="color: var(--status-warn);">Progresso Retido na Memória:</span>
-          <span class="origin-title" id="pausadoRetained" style="margin: 4px 0;">0 páginas salvas · 0 recursos salvos (0 MB)</span>
-          <p class="limits-footnote">Fila suspensa aguardando ação do usuário.</p>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">ESTADO ATUAL DO RASTREAMENTO</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Páginas concluídas:</span>
-              <span class="metrics-val" id="pausadoPagesDone">1 página</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Recursos salvos:</span>
-              <span class="metrics-val" id="pausadoResSaved">0 arquivos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Páginas restantes:</span>
-              <span class="metrics-val" id="pausadoPagesRemaining">0 páginas na fila</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Tempo decorrido:</span>
-              <span class="metrics-val" id="pausadoElapsedTime">00:00 (pausado)</span>
-            </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Recursos encontrados:</span>
+            <span class="m-val" id="analisandoResCount">0 recursos</span>
           </div>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 4px; display: block;">O QUE FAZER AGORA</span>
-          <p class="limits-footnote" style="color: var(--text);">Retome o download para continuar a fila ou salve o pacote com os recursos capturados até agora.</p>
         </div>
       </section>
 
-      <!-- 6. PRONTO (ZIP) VIEW -->
-      <section class="view-state" id="view-pronto-zip" aria-label="Download finalizado">
-        <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot ok"></span>
-            <span>Download finalizado com sucesso!</span>
-          </div>
-          <span class="state-status-sub">Pacote ZIP pronto para navegação offline</span>
+      <!-- 3d. PAUSADO VIEW -->
+      <section class="view-state" id="view-pausado" aria-label="Captura pausada">
+        <div class="progress-hero">
+          <span class="progress-pct-huge" style="font-size: 28px;">Pausado</span>
+          <span class="progress-status-sub" id="pausadoRetained">Progresso retido na memória</span>
         </div>
-
-        <div class="card origin-card">
-          <div class="origin-info">
-            <span class="origin-title" id="prontoZipFilename">site-completo.zip</span>
-            <span class="origin-url" id="prontoZipMeta">0 MB · 1 página · 0 recursos salvos</span>
+        <div class="card metrics-card-v12">
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Páginas prontas:</span>
+            <span class="m-val" id="pausadoPagesDone">1 página</span>
           </div>
-          <span class="security-badge">CONCLUÍDO</span>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">RESUMO DA CAPTURA (SALVOS E FALHAS)</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Páginas HTML:</span>
-              <span class="metrics-val" id="prontoZipPages">1 página salva (100%)</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Folhas de estilo CSS:</span>
-              <span class="metrics-val" id="prontoZipCss">0 arquivos salvos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Fontes tipográficas:</span>
-              <span class="metrics-val" id="prontoZipFonts">0 arquivos salvos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Imagens e vetores:</span>
-              <span class="metrics-val" id="prontoZipImages">0 arquivos salvos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Falha / CORS ausente:</span>
-              <span class="metrics-val" id="prontoZipCors">Nenhum</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Falha / Timeout HTTP:</span>
-              <span class="metrics-val" id="prontoZipTimeout">Nenhum</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Tempo total:</span>
-              <span class="metrics-val" id="prontoZipTime">0,0 segundos decorridos</span>
-            </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Recursos salvos:</span>
+            <span class="m-val" id="pausadoResSaved">0 arquivos</span>
           </div>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 4px; display: block;">DESTINO DO ARQUIVO</span>
-          <p class="limits-footnote" style="color: var(--text);">Salvo na pasta Downloads. Descompacte para navegar offline com o abrir.bat.</p>
         </div>
       </section>
 
-      <!-- 6b. PRONTO (HTML) VIEW -->
-      <section class="view-state" id="view-pronto-html" aria-label="HTML salvo">
-        <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot ok"></span>
-            <span>HTML salvo com sucesso!</span>
+      <!-- 4. GRAVANDO VIEW (v12) -->
+      <section class="view-state" id="view-gravando" aria-label="Gravação em andamento">
+        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+            <div class="pulse-wrapper">
+              <div class="ring-pulse-red"></div>
+              <div class="dot-core-red"></div>
+            </div>
+            <span class="type-special" style="font-size: 10.5px; color: #EF4444; letter-spacing: 0.08em;">GRAVAÇÃO ATIVA NA PÁGINA</span>
           </div>
-          <span class="state-status-sub">Arquivo .html único salvo na pasta Downloads</span>
+          <h1 class="title-display" style="margin-bottom: 3px;">Interaja com a página</h1>
+          <p class="desc-text">Navegue normalmente. Abra menus, clique em abas e interaja.</p>
         </div>
 
-        <div class="card origin-card">
-          <div class="origin-info">
-            <span class="origin-title" id="prontoHtmlFilename">pagina.html</span>
-            <span class="origin-url" id="prontoHtmlMeta">0 KB · 1 arquivo salvo · Sem dependências</span>
+        <!-- TIMER DE GRAVAÇÃO -->
+        <div style="padding: 18px 14px; border-radius: 3px; background: #101014; border: 1.5px solid rgba(239, 68, 68, 0.4); text-align: center; position: relative; z-index: 2; margin-bottom: 12px;">
+          <div class="type-special" style="font-size: 11px; color: #8A8F9E; letter-spacing: 0.1em; margin-bottom: 5px;">
+            TEMPO GRAVADO
           </div>
-          <span class="security-badge">CONCLUÍDO</span>
+          <div class="type-special" style="font-size: 36px; font-weight: 700; color: #FFFFFF; line-height: 1;" id="gravandoTimer">
+            00:00
+          </div>
+          <div style="font-size: 12.5px; color: #A2A19D; margin-top: 8px;" id="gravandoInteracoes">
+            Interações e cliques capturados ao vivo
+          </div>
+          <span id="gravandoTitle" style="display: none;"></span>
+          <span id="gravandoUrl" style="display: none;"></span>
         </div>
 
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">RESUMO DA CAPTURA</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Documento principal:</span>
-              <span class="metrics-val" id="prontoHtmlDoc">1 arquivo .html autossuficiente</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Estilos embutidos:</span>
-              <span class="metrics-val" id="prontoHtmlStyles">0 folhas inline</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Imagens e fontes (data:):</span>
-              <span class="metrics-val" id="prontoHtmlAssets">0 recursos</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Recursos excedentes / omitidos:</span>
-              <span class="metrics-val" id="prontoHtmlOmitted">Nenhum</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Rastreadores e scripts:</span>
-              <span class="metrics-val" id="prontoHtmlTrackers">Removidos (modo estático seguro)</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Tempo total:</span>
-              <span class="metrics-val" id="prontoHtmlTime">0,0 segundos</span>
-            </div>
+        <div style="padding: 9px 12px; border-radius: 3px; background: #18191E; border: 1px solid rgba(242, 241, 238, 0.14); position: relative; z-index: 2; margin-bottom: 10px;">
+          <div style="font-size: 12.5px; color: #C2C1BD; line-height: 1.35;">
+            <strong style="color: #FFF;">Importante:</strong> A gravação funciona apenas dentro de <span class="type-special" style="color: #FFF;" id="gravandoScopeDomain">esta página</span>. Se trocar de endereço ou aba, a gravação será pausada.
           </div>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 4px; display: block;">DESTINO DO ARQUIVO</span>
-          <p class="limits-footnote" style="color: var(--text);">Salvo na pasta Downloads padrão. Abra no navegador para visualizar.</p>
         </div>
       </section>
 
-      <!-- 7. ERRO VIEW -->
+      <!-- 4b. GRAVAÇÃO ERRO (v12) -->
+      <section class="view-state" id="view-gravacao-erro" aria-label="Erro de navegação durante a gravação">
+        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
+          <div style="display: flex; align-items: center; gap: 6px; color: #EF4444; margin-bottom: 3px;">
+            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/></svg>
+            <span class="type-special" style="font-size: 11px; letter-spacing: 0.08em;">PÁGINA ALTERADA</span>
+          </div>
+          <h1 class="title-display" style="margin-bottom: 4px;">Você saiu da página</h1>
+        </div>
+
+        <!-- CARTÃO DE MENSAGEM DA SPEC -->
+        <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid rgba(239, 68, 68, 0.4); position: relative; z-index: 2; margin-bottom: 14px;">
+          <div style="font-size: 13.5px; color: #F2F1EE; line-height: 1.45; margin-bottom: 10px;" id="gravacaoErroMsg">
+            A gravação vale só para a página onde começou. Você saiu de <strong style="color: #FFFFFF; text-decoration: underline;" id="gravacaoErroOrigem">este endereço</strong> para outro endereço.
+          </div>
+          <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
+            <div class="type-special" style="font-size: 10px; color: #8A8F9E; text-transform: uppercase;">Gravação preservada:</div>
+            <div class="type-special" style="font-size: 12.5px; color: #3ECF8E; margin-top: 1px;" id="gravacaoErroPreservada">
+              00:42.5 DE INTERAÇÕES SALVAS
+            </div>
+          </div>
+        </div>
+
+        <div class="desc-text" style="font-size: 12.5px; margin-bottom: 10px; position: relative; z-index: 2;" id="gravacaoErroSub">
+          Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.
+        </div>
+      </section>
+
+      <!-- 5. TELA PRONTO (ZIP) (v12) -->
+      <section class="view-state" id="view-pronto-zip" aria-label="Site Pronto">
+        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
+          <div style="display: flex; align-items: center; gap: 6px; color: #3ECF8E; margin-bottom: 3px;">
+            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>
+            <span class="type-special" style="font-size: 11px; letter-spacing: 0.08em;" id="prontoZipSuper">ARQUIVAMENTO CONCLUÍDO</span>
+          </div>
+          <h1 class="title-display" style="margin-bottom: 3px;" id="prontoZipTitle">Página arquivada!</h1>
+          <p class="desc-text" id="prontoZipDesc">O arquivo ZIP foi gerado e está pronto para uso offline.</p>
+        </div>
+
+        <!-- CARTÃO DO ARQUIVO GERADO -->
+        <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid #FFFFFF; position: relative; z-index: 2; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+            <span class="act-title" id="prontoZipFilename">site.zip</span>
+            <span class="type-special" style="font-size: 11px; color: #3ECF8E;" id="prontoZipBadge">CÓPIA FIEL</span>
+          </div>
+          
+          <div style="font-size: 12.5px; color: #A2A19D; line-height: 1.35; margin-bottom: 8px;" id="prontoZipExpl">
+            Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.
+          </div>
+
+          <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
+            <div style="font-size: 12px; color: #F2F1EE; line-height: 1.3;">
+              <strong style="color: #FFF;">Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
+            </div>
+          </div>
+          <span id="prontoZipMeta" style="display: none;">1.5 MB · Pronto para abrir</span>
+        </div>
+
+        <div class="card metrics-card-v12" style="display: none;">
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Páginas salvas:</span>
+            <span class="m-val" id="prontoZipPages">1 página (100%)</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Folhas de estilo CSS:</span>
+            <span class="m-val" id="prontoZipCss">0 arquivos</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Fontes tipográficas:</span>
+            <span class="m-val" id="prontoZipFonts">0 arquivos</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Imagens e vetores:</span>
+            <span class="m-val" id="prontoZipImages">0 arquivos</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Tempo decorrido:</span>
+            <span class="m-val" id="prontoZipTime">0,0s</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span id="prontoZipCors">Nenhum</span>
+            <span id="prontoZipTimeout">Nenhum</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5b. TELA PRONTO (HTML) (v12) -->
+      <section class="view-state" id="view-pronto-html" aria-label="HTML Pronto">
+        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
+          <div style="display: flex; align-items: center; gap: 6px; color: #3ECF8E; margin-bottom: 3px;">
+            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>
+            <span class="type-special" style="font-size: 11px; letter-spacing: 0.08em;" id="prontoHtmlSuper">ARQUIVAMENTO CONCLUÍDO</span>
+          </div>
+          <h1 class="title-display" style="margin-bottom: 3px;" id="prontoHtmlTitle">Página arquivada!</h1>
+          <p class="desc-text" id="prontoHtmlDesc">O arquivo HTML foi gerado e está pronto para uso offline.</p>
+        </div>
+
+        <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid #FFFFFF; position: relative; z-index: 2; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+            <span class="act-title" id="prontoHtmlFilename">pagina.html</span>
+            <span class="type-special" style="font-size: 11px; color: #3ECF8E;" id="prontoHtmlBadge">ARQUIVO ÚNICO</span>
+          </div>
+          
+          <div style="font-size: 12.5px; color: #A2A19D; line-height: 1.35; margin-bottom: 8px;" id="prontoHtmlExpl">
+            Abre com dois cliques em qualquer navegador. As imagens são carregadas do site original, então precisa de internet.
+          </div>
+
+          <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
+            <div style="font-size: 12px; color: #F2F1EE; line-height: 1.3;">
+              <strong style="color: #FFF;">Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
+            </div>
+          </div>
+          <span id="prontoHtmlMeta" style="display: none;">0 KB · Sem dependências</span>
+        </div>
+
+        <div class="card metrics-card-v12" style="display: none;">
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Documento principal:</span>
+            <span class="m-val" id="prontoHtmlDoc">1 arquivo .html</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Estilos embutidos:</span>
+            <span class="m-val" id="prontoHtmlStyles">0 folhas inline</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Imagens e fontes:</span>
+            <span class="m-val" id="prontoHtmlAssets">0 recursos</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Recursos omitidos:</span>
+            <span class="m-val" id="prontoHtmlOmitted">Nenhum</span>
+          </div>
+          <div class="metrics-row-v12">
+            <span class="m-lbl">Tempo total:</span>
+            <span class="m-val" id="prontoHtmlTime">0,0s</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. ERRO VIEW -->
       <section class="view-state" id="view-erro" aria-label="Página incompatível">
         <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot err"></span>
-            <span id="erroTitle" style="color: var(--status-err);">Página de sistema incompatível</span>
-          </div>
-          <span class="state-status-sub" id="erroSub">Navegadores bloqueiam extensões em abas internas</span>
+          <h2 class="origin-hero-title" id="erroTitle" style="color: var(--status-danger, #EF4444); font-size: 19px;">Página incompatível</h2>
+          <span class="desc-text" id="erroSub">Navegadores bloqueiam extensões em abas internas</span>
         </div>
-
-        <div class="card" style="border-color: var(--status-err);">
-          <span class="origin-title" style="color: var(--status-err); margin-bottom: 4px; display: block;">Restrição de Segurança do Navegador:</span>
-          <p class="limits-footnote">Navegadores Chrome e Edge impedem scripts em abas internas (chrome://, edge://, about:).</p>
-          <p class="limits-footnote" id="erroProtocol" style="margin-top: 4px; font-family: var(--font-mono); color: var(--accent);">Selecione uma aba com página web (HTTP/HTTPS)</p>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">O QUE FAZER AGORA</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">1. Alterne para aba comum:</span>
-              <span class="metrics-val" style="color: var(--accent);">Selecione site público</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">2. Detecção automática:</span>
-              <span class="metrics-val" style="color: var(--accent);">Pluck reativa na hora</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">3. Protocolos válidos:</span>
-              <span class="metrics-val">HTTP, HTTPS, file://</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">PÁGINAS SUPORTADAS PELO PLUCK</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Sites e Portais Web:</span>
-              <span class="metrics-val">HTTP / HTTPS</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Documentos HTML locais:</span>
-              <span class="metrics-val">file://</span>
-            </div>
-          </div>
+        <div class="card" style="border-color: var(--status-danger, #EF4444); padding: 12px 14px;">
+          <p class="desc-text" id="erroProtocol">Selecione uma aba com página web comum (HTTP, HTTPS, file://)</p>
         </div>
       </section>
 
-      <!-- 7.1 SEM ACESSO VIEW (URL OCULTA / SEM PERMISSÃO) -->
-      <section class="view-state" id="view-sem-acesso" aria-label="Acesso à aba restrito">
+      <!-- 7. SEM ACESSO VIEW -->
+      <section class="view-state" id="view-sem-acesso" aria-label="Sem acesso à aba">
         <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot warn"></span>
-            <span style="color: var(--status-warn);">Acesso à aba restrito</span>
-          </div>
-          <span class="state-status-sub">O navegador ocultou os detalhes desta página por falta de permissão</span>
-        </div>
-
-        <div class="card" style="border-color: var(--status-warn);">
-          <span class="origin-title" style="color: var(--status-warn); margin-bottom: 4px; display: block;">Identificação da Página Indisponível:</span>
-          <p class="limits-footnote">O navegador requer permissão de abas ('tabs') para ler a URL e o título da página ativa.</p>
-          <p class="limits-footnote" id="semAcessoDetail" style="margin-top: 4px; font-family: var(--font-mono); color: var(--accent);">Permissão 'tabs' necessária no navegador</p>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">O QUE FAZER AGORA</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">1. Recarregue a extensão:</span>
-              <span class="metrics-val" style="color: var(--accent);">Atualize em chrome://extensions</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">2. Foco na página:</span>
-              <span class="metrics-val" style="color: var(--accent);">Clique na aba desejada</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">3. Detecção:</span>
-              <span class="metrics-val">Automática ao reativar</span>
-            </div>
-          </div>
+          <h2 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Identificação da aba oculta</h2>
+          <span class="desc-text" id="semAcessoDetail">Conceda permissão no navegador para identificar esta aba</span>
         </div>
       </section>
 
       <!-- 8. PERMISSÃO VIEW -->
       <section class="view-state" id="view-permissao" aria-label="Permissão necessária">
         <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot"></span>
-            <span>Permissão de rastreamento necessária</span>
-          </div>
-          <span class="state-status-sub">Autorização para capturar páginas vinculadas do domínio</span>
+          <h2 class="origin-hero-title" style="font-size: 19px;">Permissão de Domínio</h2>
+          <span class="desc-text" id="permScopeText">Rotas sob este domínio</span>
         </div>
-
-        <div class="card origin-card">
-          <div class="origin-info">
-            <span class="origin-title" id="permDomain">localhost</span>
-            <p class="limits-footnote" style="margin-top: 4px;">Para rastrear e salvar páginas vinculadas sob este domínio, o navegador requer autorização explícita.</p>
-          </div>
-          <span class="security-badge" style="color: var(--accent);">MULTI-PÁGINA</span>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">O QUE A EXTENSÃO IRÁ ACESSAR</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Páginas internas:</span>
-              <span class="metrics-val" id="permScopeText">Rotas sob o domínio</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Recursos do site:</span>
-              <span class="metrics-val">CSS, fontes e imagens</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Dados privados:</span>
-              <span class="metrics-val">Zero senhas ou cookies</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 4px; display: block;">REVOGAÇÃO AUTOMÁTICA</span>
-          <p class="limits-footnote" style="color: var(--text);">A permissão é temporária e revogada assim que o download terminar ou o painel for fechado.</p>
+        <div class="card" style="padding: 12px 14px;">
+          <p class="desc-text">Para rastrear páginas vinculadas neste domínio (<strong id="permDomain">este domínio</strong>), o Pluck precisa de autorização local.</p>
         </div>
       </section>
 
       <!-- 9. LOGIN VIEW -->
-      <section class="view-state" id="view-login" aria-label="Autenticação detectada">
+      <section class="view-state" id="view-login" aria-label="Página com login">
         <div class="state-header">
-          <div class="state-status-title">
-            <span class="status-dot warn"></span>
-            <span style="color: var(--status-warn);">Página protegida por autenticação</span>
-          </div>
-          <span class="state-status-sub">Sessão ativa detectada neste domínio</span>
+          <h2 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Área com login</h2>
+          <span class="desc-text">Campos de senha e credenciais são descartados automaticamente</span>
         </div>
-
-        <div class="card" style="background: var(--warn-bg); border-color: var(--warn-border);">
-          <span class="origin-title" style="color: var(--status-warn); margin-bottom: 4px; display: block;">Área Restrita com Login Ativo:</span>
-          <p class="limits-footnote">O Pluck salvará o DOM visível renderizado na sessão ativa. Senhas, cookies e tokens NUNCA são gravados no arquivo.</p>
-        </div>
-
-        <div class="card">
-          <span class="limits-title" style="margin-bottom: 8px; display: block;">PROTEÇÕES AUTOMÁTICAS DO PLUCK</span>
-          <div class="metrics-table">
-            <div class="metrics-row">
-              <span class="metrics-lbl">Senhas e credenciais:</span>
-              <span class="metrics-val">Campos password descartados</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Tokens e cookies:</span>
-              <span class="metrics-val">Removidos de headers e scripts</span>
-            </div>
-            <div class="metrics-row">
-              <span class="metrics-lbl">Campos ocultos:</span>
-              <span class="metrics-val">Higienizados na serialização</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card" style="display: flex; gap: 10px; align-items: center;">
-          <input type="checkbox" id="consentCheck" checked style="accent-color: var(--accent); width: 16px; height: 16px;">
-          <label for="consentCheck" class="limits-footnote" style="color: var(--text); cursor: pointer;">Estou ciente e autorizo o salvamento do conteúdo visível desta sessão ativa.</label>
+        <div class="card" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px;">
+          <input type="checkbox" id="consentCheck" checked style="accent-color: #FFFFFF; width: 16px; height: 16px;">
+          <label for="consentCheck" class="desc-text" style="color: #FFFFFF; cursor: pointer;">Estou ciente e autorizo o salvamento do conteúdo visível.</label>
         </div>
       </section>
 
     </main>
 
-    <!-- FOOTER ACTIONS DOCK -->
+    <!-- FOOTER ACTIONS DOCK v12 -->
     <footer class="panel-footer" id="panelFooter">
-      <button type="button" class="btn-primary" id="btnMainAction">Baixar Página Completa (ZIP)</button>
+      <button type="button" class="btn-primary" id="btnMainAction">
+        <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm0 -12a2 2 0 0 1 2 2a2 2 0 0 1 2 -2a2 2 0 0 1 -2 -2a2 2 0 0 1 -2 2zm-7 12a6 6 0 0 1 6 -6a6 6 0 0 1 -6 -6a6 6 0 0 1 -6 6a6 6 0 0 1 6 6z"/></svg>
+        <span>Começar a arquivar</span>
+        <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 18l6-6-6-6"/></svg>
+      </button>
+      <button type="button" class="btn-secondary" id="btnDownloadAgain" style="display: none;">Baixar novamente</button>
       <button type="button" class="btn-secondary btn-small" id="btnBackToStart" style="display: none;" aria-label="Voltar ao início">Voltar ao início</button>
-      <span class="footer-note" id="footerNote">Processamento 100% local no seu navegador</span>
+      <span class="footer-note" id="footerNote" style="display: none;">Processamento 100% local no seu navegador</span>
     </footer>
 
   </div>

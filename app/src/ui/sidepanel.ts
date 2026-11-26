@@ -1,29 +1,100 @@
 import { validateUrl, isLocalhostPage } from '../core/security/url-guard';
-import { pageHtmlModule, imagesZipModule } from '../modules';
+import { pageHtmlModule } from '../modules';
 import { captureFaithfulSite } from '../core/faithful/faithful-engine';
 import { isValidDocumentHtml } from '../core/capture/capture-engine';
 import { CdpNetworkRecorder } from '../core/faithful/cdp-recorder';
 import { detectLinkedExternalDomains } from '../core/faithful/crawler';
+import { isSpaSkeleton, serializeLiveDom } from '../core/faithful/dom-serializer';
+import { SessionRecorder } from '../core/faithful/session-recorder';
+import { CapturedResource } from '../core/faithful/types';
+import type { AutoscrollOptions } from '../core/faithful/autoscroll';
+import { captureMediaZip, collectMediaFromDom, type MediaType } from '../core/capture/media-collector';
 
 export type UiScope = 'esta_pagina' | 'paginas_vinculadas' | 'site_inteiro';
 export type UiMode = 'zip' | 'html' | 'images';
 export type UiState =
   | 'inicio'
+  | 'opcoes'
   | 'rolando'
   | 'analisando'
   | 'baixando'
   | 'pausado'
   | 'pronto'
-  | 'erro'
   | 'sem_acesso'
+  | 'erro'
   | 'permissao'
-  | 'login';
+  | 'login'
+  | 'gravando'
+  | 'gravacao_erro';
 
-// Estado reativo da UI v4
+// Estado reativo da UI v12
 let currentState: UiState = 'inicio';
 let currentScope: UiScope = 'esta_pagina';
-let currentMode: UiMode = 'zip'; // [DECISÃO DA v4] Página Completa Fiel (ZIP) é o PADRÃO
+let currentMode: UiMode = 'zip'; // [DECISÃO DA v4/v12] Página Completa Fiel (ZIP) é o PADRÃO
+let captureMethod: 'automatic' | 'recording' = 'automatic'; // SPEC-v12: Automático vs Gravação
+const sessionRecorder = new SessionRecorder();
+let recordingTimerInterval: any = null;
 let autoscrollOn = true;
+let scrollLimitChoice: '10' | '30' | 'unlimited' = '10';
+
+export function setScrollLimitChoice(val: '10' | '30' | 'unlimited') {
+  scrollLimitChoice = val;
+  const cards = [
+    { el: document.getElementById('scrollCardScreens'), key: '10' },
+    { el: document.getElementById('scrollCardTime'), key: '30' },
+    { el: document.getElementById('scrollCardUnlimited'), key: 'unlimited' }
+  ];
+  cards.forEach(({ el, key }) => {
+    if (!el) return;
+    const isSelected = key === val;
+    el.className = isSelected ? 'card interactive mode-card selected' : 'card interactive mode-card';
+    el.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+    const radio = el.querySelector('.radio-circle');
+    if (radio) {
+      if (isSelected) {
+        radio.className = 'radio-circle active';
+        radio.innerHTML = '<div class="radio-dot"></div>';
+      } else {
+        radio.className = 'radio-circle';
+        radio.innerHTML = '';
+      }
+    }
+  });
+
+  const scrollChips = document.querySelectorAll('#scrollLimitChips .chip-option');
+  scrollChips.forEach((chip) => {
+    const chipVal = chip.getAttribute('data-val');
+    const isChipActive =
+      (val === '10' && chipVal === '10') ||
+      (val === '30' && chipVal === '30') ||
+      (val === 'unlimited' && (chipVal === '999' || chipVal === 'unlimited'));
+    chip.classList.toggle('active', isChipActive);
+  });
+}
+
+export function getActiveAutoscrollOptions(): AutoscrollOptions {
+  if (scrollLimitChoice === '30') {
+    return {
+      limitType: 'time',
+      maxTimeSeconds: 30, // SPEC-v12: 30 segundos
+      step: 400,
+      intervalMs: 150
+    };
+  }
+  if (scrollLimitChoice === 'unlimited') {
+    return {
+      limitType: 'unlimited',
+      step: 400,
+      intervalMs: 150
+    };
+  }
+  return {
+    limitType: 'screens',
+    maxScreens: 10,
+    step: 400,
+    intervalMs: 150
+  };
+}
 let limitPages = 50;
 let limitMb = 100;
 let includeSubdomains = false;
@@ -37,6 +108,8 @@ let targetTabOverrideHtml: string | null = null;
 let loginConsentAccepted = false;
 let activeRequestedOrigin: string | null = null;
 let activeBlobUrl: string | null = null;
+let lastDownloadInfo: { filename: string; size: number; base64: string } | null = null;
+let inMemoryArchivedFile: { filename: string; blob: Blob; base64: string } | null = null;
 
 // Domínios externos vinculados (Opção B - Confirmação Explícita)
 let detectedExternalDomains: string[] = [];
@@ -44,6 +117,8 @@ let confirmedExternalDomains = new Set<string>();
 
 // Controle de execução e cancelamento/pausa
 let skipAutoscrollRequested = false;
+let requestSkipCurrentRequested = false;
+let requestStopAndSaveRequested = false;
 let isCapturePaused = false;
 let isCaptureCancelled = false;
 let partialFilesRetained: Record<string, Uint8Array> = {};
@@ -101,7 +176,13 @@ export function resetToInitialState() {
   skipAutoscrollRequested = false;
   cleanupResources();
 
-  // 2. Limpa dados de progresso e resultado anterior
+  if (recordingTimerInterval) {
+    clearInterval(recordingTimerInterval);
+    recordingTimerInterval = null;
+  }
+  sessionRecorder.reset();
+
+  // 2. Limpa dados de progresso e resultado anterior (SPEC-v12: arquivo apagado ao clicar em Voltar)
   partialFilesRetained = {};
   partialStatsRetained = {
     pages: 0,
@@ -110,6 +191,9 @@ export function resetToInitialState() {
     elapsedSeconds: 0
   };
   lastDownloadInfo = null;
+  inMemoryArchivedFile = null;
+  requestSkipCurrentRequested = false;
+  requestStopAndSaveRequested = false;
 
   // Limpa elementos visuais de progresso e métricas no DOM
   const scrollPct = document.getElementById('scrollPct');
@@ -141,6 +225,40 @@ export function resetToInitialState() {
   if (cntTime) cntTime.textContent = '00:00 decorridos';
 
   // 3. Volta para o estado inicial padrão, mantendo a aba/URL ativa
+  captureMethod = 'automatic';
+  autoscrollOn = true;
+  const autoSw = document.getElementById('autoSwitch');
+  const recSw = document.getElementById('recordClicksSwitch');
+  if (autoSw) {
+    autoSw.className = 'switch-track';
+    autoSw.setAttribute('aria-checked', 'true');
+  }
+  if (recSw) {
+    recSw.className = 'switch-track off';
+    recSw.setAttribute('aria-checked', 'false');
+  }
+
+  const autoCircle = document.getElementById('autoRadioCircle');
+  const recCircle = document.getElementById('recRadioCircle');
+  const optAuto = document.getElementById('optAutoRow');
+  const optRec = document.getElementById('optRecRow');
+  if (autoCircle) {
+    autoCircle.classList.add('active');
+    autoCircle.innerHTML = '<div class="radio-dot"></div>';
+  }
+  if (recCircle) {
+    recCircle.classList.remove('active');
+    recCircle.innerHTML = '';
+  }
+  if (optAuto) {
+    optAuto.classList.add('selected');
+    optAuto.setAttribute('aria-checked', 'true');
+  }
+  if (optRec) {
+    optRec.classList.remove('selected');
+    optRec.setAttribute('aria-checked', 'false');
+  }
+
   setScope('esta_pagina');
   selectMode('zip');
   setState('inicio');
@@ -163,6 +281,23 @@ export function isSystemBrowserPage(url: string): boolean {
     lower.startsWith('devtools://') ||
     lower.startsWith('view-source:')
   );
+}
+
+export function formatDisplayDomain(urlOrOrigin?: string | null): string {
+  if (!urlOrOrigin || urlOrOrigin === 'null' || urlOrOrigin === 'undefined' || urlOrOrigin === '—' || urlOrOrigin === 'about:blank') {
+    return 'Sem página';
+  }
+  try {
+    const parsed = new URL(urlOrOrigin);
+    const host = parsed.hostname.replace(/^www\./, '');
+    if (host && host !== 'null' && host !== 'undefined') return host;
+    const proto = parsed.protocol.replace(':', '');
+    if (proto && proto !== 'null' && proto !== 'undefined') return proto;
+  } catch {
+    const cleaned = urlOrOrigin.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].split('?')[0];
+    if (cleaned && cleaned !== 'null' && cleaned !== 'undefined') return cleaned;
+  }
+  return 'Sem página';
 }
 
 export function updateSecurityPillForHiddenUrl() {
@@ -196,36 +331,34 @@ function updateSecurityPill(url: string, tabStatus?: string) {
 
   if (popUrl) popUrl.textContent = url || '—';
 
-  if (!url) {
+  if (!url || url === 'null' || url === 'undefined') {
     pill.className = 'site-chip domain-pill muted';
-    dot.className = 'status-dot dot-core-amber muted';
-    if (ring) ring.className = 'ring-spin-amber';
-    dText.textContent = '—';
+    dot.className = 'status-dot dot-core-red err';
+    if (ring) ring.className = 'ring-static-red';
+    dText.textContent = 'Sem página';
     if (badge) {
       badge.className = 'security-badge muted';
-      badge.textContent = '—';
+      badge.textContent = 'Sem página';
     }
     if (popStatus) {
       popStatus.replaceChildren();
       const mDot = document.createElement('span');
       mDot.className = 'mini-dot';
-      mDot.style.background = '#F59E0B';
-      mDot.style.boxShadow = '0 0 6px #F59E0B';
+      mDot.style.background = '#EF4444';
+      mDot.style.boxShadow = '0 0 6px #EF4444';
       popStatus.appendChild(mDot);
-      popStatus.appendChild(document.createTextNode(' AGUARDANDO ABA'));
-      popStatus.style.color = '#F59E0B';
+      popStatus.appendChild(document.createTextNode(' SEM PÁGINA'));
+      popStatus.style.color = '#EF4444';
     }
     return;
   }
 
   try {
-    const parsed = new URL(url);
-    const host = parsed.hostname;
-    const cleanHost = host || parsed.protocol.replace(':', '');
+    const cleanHost = formatDisplayDomain(url);
     dText.textContent = cleanHost;
 
     if (savePath) {
-      savePath.textContent = `Downloads / ${cleanHost || 'site'}.zip`;
+      savePath.textContent = `Downloads / ${cleanHost !== 'Sem página' ? cleanHost : 'site'}.zip`;
     }
 
     if (isSystemBrowserPage(url)) {
@@ -419,8 +552,17 @@ export function setupPopoverEvents() {
 export function setState(state: UiState, data?: any) {
   currentState = state;
 
+  if (state === 'inicio') {
+    skipAutoscrollRequested = false;
+    requestSkipCurrentRequested = false;
+    requestStopAndSaveRequested = false;
+    isCapturePaused = false;
+    isCaptureCancelled = false;
+  }
+
   const states: UiState[] = [
     'inicio',
+    'opcoes',
     'rolando',
     'analisando',
     'baixando',
@@ -429,7 +571,9 @@ export function setState(state: UiState, data?: any) {
     'erro',
     'sem_acesso',
     'permissao',
-    'login'
+    'login',
+    'gravando',
+    'gravacao_erro'
   ];
 
   for (const s of states) {
@@ -447,7 +591,7 @@ export function setState(state: UiState, data?: any) {
         }
       }
     } else {
-      const viewId = 'view-' + (s === 'sem_acesso' ? 'sem-acesso' : s);
+      const viewId = 'view-' + (s === 'sem_acesso' ? 'sem-acesso' : (s === 'gravacao_erro' ? 'gravacao-erro' : s));
       const el = document.getElementById(viewId);
       if (el) {
         if (s === state) {
@@ -456,6 +600,35 @@ export function setState(state: UiState, data?: any) {
           el.classList.remove('active');
         }
       }
+    }
+  }
+
+  if (state === 'inicio') {
+    const oTitle = document.getElementById('originTitle');
+    const oHeroSub = document.getElementById('originHeroSub');
+    if (oTitle) oTitle.textContent = 'Como deseja arquivar?';
+    if (oHeroSub) oHeroSub.textContent = 'Escolha o modo de captura para salvar esta página.';
+  }
+
+  if (state === 'opcoes') {
+    const sub = data?.subview || (currentMode === 'images' ? 'midias' : 'site');
+    const subSite = document.getElementById('subview-opcoes-site');
+    const subMidias = document.getElementById('subview-opcoes-midias');
+    const subRolagem = document.getElementById('subview-opcoes-rolagem');
+    const titleEl = document.getElementById('optionsViewTitle');
+    const subEl = document.getElementById('optionsViewSub');
+    const detBadge = document.getElementById('optionsDetectedBadge');
+    if (subSite) subSite.style.display = sub === 'site' ? 'flex' : 'none';
+    if (subMidias) subMidias.style.display = sub === 'midias' ? 'flex' : 'none';
+    if (subRolagem) subRolagem.style.display = sub === 'rolagem' ? 'flex' : 'none';
+    if (detBadge) detBadge.style.display = sub === 'rolagem' ? 'block' : 'none';
+    if (titleEl) {
+      titleEl.textContent = sub === 'site' ? 'Opções de Site inteiro' : (sub === 'midias' ? 'Filtros de Mídias' : 'Rolagem Infinita');
+    }
+    if (subEl) {
+      subEl.textContent = sub === 'site'
+        ? 'Defina os limites de navegação para varrer as páginas internas.'
+        : (sub === 'midias' ? 'Escolha os tipos de arquivos e limites para o ZIP.' : 'Esta página carrega novos itens continuamente conforme você rola para baixo.');
     }
   }
 
@@ -491,14 +664,9 @@ export function setState(state: UiState, data?: any) {
     }
     if (dText) {
       if (currentTabUrl) {
-        try {
-          const parsed = new URL(currentTabUrl);
-          dText.textContent = parsed.hostname || parsed.protocol.replace(':', '');
-        } catch {
-          dText.textContent = 'Sistema';
-        }
+        dText.textContent = formatDisplayDomain(currentTabUrl);
       } else {
-        dText.textContent = 'Sistema';
+        dText.textContent = 'Sem página';
       }
     }
     if (badge) {
@@ -513,6 +681,34 @@ export function setState(state: UiState, data?: any) {
     }
   } else if (state === 'login') {
     if (pill) pill.className = 'domain-pill warn';
+  } else if (state === 'gravando') {
+    if (dot) dot.className = 'status-dot dot-core-red err';
+    const ring = document.getElementById('domainRing');
+    if (ring) ring.className = 'ring-pulse-red';
+  } else if (state === 'gravacao_erro') {
+    if (pill) pill.className = 'site-chip danger';
+    if (dot) dot.className = 'status-dot dot-core-red err';
+    const ring = document.getElementById('domainRing');
+    if (ring) ring.className = 'ring-pulse-red';
+    if (dText) {
+      if (data?.navigatedToUrl) {
+        dText.textContent = formatDisplayDomain(data.navigatedToUrl);
+      } else {
+        dText.textContent = 'outro-site.com';
+      }
+    }
+  } else {
+    const displayHost = formatDisplayDomain(currentTabOrigin || currentTabUrl);
+    const hasValidHost = displayHost !== 'Sem página';
+
+    if (pill) pill.className = 'site-chip';
+    if (dot) dot.className = hasValidHost ? 'status-dot dot-core-green ok' : 'status-dot dot-core-red err';
+    const ring = document.getElementById('domainRing');
+    if (ring) ring.className = hasValidHost ? 'ring-pulse-green' : 'ring-static-red';
+
+    if (dText) {
+      dText.textContent = displayHost;
+    }
   }
 
   renderFooterActions(data);
@@ -605,6 +801,11 @@ function populateStateData(state: UiState, data?: any) {
   } else if (state === 'pronto') {
     if (currentMode === 'html') {
       const pName = document.getElementById('prontoHtmlFilename');
+      const pSuper = document.getElementById('prontoHtmlSuper');
+      const pTitle = document.getElementById('prontoHtmlTitle');
+      const pDesc = document.getElementById('prontoHtmlDesc');
+      const pBadge = document.getElementById('prontoHtmlBadge');
+      const pExpl = document.getElementById('prontoHtmlExpl');
       const pMeta = document.getElementById('prontoHtmlMeta');
       const pDoc = document.getElementById('prontoHtmlDoc');
       const pStyles = document.getElementById('prontoHtmlStyles');
@@ -619,6 +820,11 @@ function populateStateData(state: UiState, data?: any) {
       const totalEmbedded = imagesCount + fontsCount;
 
       if (pName) pName.textContent = data?.filename || 'pagina.html';
+      if (pSuper) pSuper.textContent = 'ARQUIVAMENTO CONCLUÍDO';
+      if (pTitle) pTitle.textContent = 'Página arquivada!';
+      if (pDesc) pDesc.textContent = 'O arquivo HTML foi gerado e está pronto para uso offline.';
+      if (pBadge) pBadge.textContent = 'ARQUIVO ÚNICO';
+      if (pExpl) pExpl.textContent = 'Abre com dois cliques em qualquer navegador. As imagens são carregadas do site original, então precisa de internet.';
       if (pMeta) pMeta.textContent = `${data?.sizeText || '480 KB'} · Arquivo autossuficiente · ${totalEmbedded} recursos embutidos`;
       if (pDoc) pDoc.textContent = '1 arquivo .html autossuficiente';
       if (pStyles) pStyles.textContent = `${stylesCount} folha${stylesCount === 1 ? '' : 's'} de estilo inline`;
@@ -635,6 +841,11 @@ function populateStateData(state: UiState, data?: any) {
       if (pTime) pTime.textContent = `${data?.elapsedTime || '0,8'} segundos`;
     } else {
       const pName = document.getElementById('prontoZipFilename');
+      const pSuper = document.getElementById('prontoZipSuper');
+      const pTitle = document.getElementById('prontoZipTitle');
+      const pDesc = document.getElementById('prontoZipDesc');
+      const pBadge = document.getElementById('prontoZipBadge');
+      const pExpl = document.getElementById('prontoZipExpl');
       const pMeta = document.getElementById('prontoZipMeta');
       const pPages = document.getElementById('prontoZipPages');
       const pCss = document.getElementById('prontoZipCss');
@@ -644,7 +855,28 @@ function populateStateData(state: UiState, data?: any) {
       const pTimeout = document.getElementById('prontoZipTimeout');
       const pTime = document.getElementById('prontoZipTime');
 
-      if (pName) pName.textContent = data?.filename || 'site-completo.zip';
+      if (pName) pName.textContent = data?.filename || (currentMode === 'images' ? 'midias.zip' : 'site.zip');
+
+      if (currentMode === 'images') {
+        if (pSuper) pSuper.textContent = 'EXTRAÇÃO CONCLUÍDA';
+        if (pTitle) pTitle.textContent = 'Mídias extraídas!';
+        if (pDesc) pDesc.textContent = 'O arquivo ZIP com as mídias está pronto para download.';
+        if (pBadge) pBadge.textContent = 'MÍDIAS';
+        if (pExpl) pExpl.textContent = 'Abra o ZIP para ver os arquivos organizados em pastas (imagens, vetores, vídeos e áudios).';
+      } else if (currentScope === 'site_inteiro' || currentScope === 'paginas_vinculadas') {
+        if (pSuper) pSuper.textContent = 'ARQUIVAMENTO CONCLUÍDO';
+        if (pTitle) pTitle.textContent = 'Site arquivado!';
+        if (pDesc) pDesc.textContent = 'O arquivo ZIP do site está pronto para navegação offline.';
+        if (pBadge) pBadge.textContent = 'CÓPIA FIEL';
+        if (pExpl) pExpl.textContent = 'Descompacte o ZIP e abra index.html em qualquer navegador para navegar pelo site.';
+      } else {
+        if (pSuper) pSuper.textContent = 'ARQUIVAMENTO CONCLUÍDO';
+        if (pTitle) pTitle.textContent = 'Página arquivada!';
+        if (pDesc) pDesc.textContent = 'O arquivo ZIP foi gerado e está pronto para uso offline.';
+        if (pBadge) pBadge.textContent = 'CÓPIA FIEL';
+        if (pExpl) pExpl.textContent = 'Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.';
+      }
+
       if (pMeta) {
         pMeta.textContent = `${data?.sizeText || '18,4 MB'} · ${data?.pages || 1} página${(data?.pages || 1) > 1 ? 's' : ''} · ${data?.totalAssets || data?.itemCount || 0} recursos salvos`;
       }
@@ -676,13 +908,50 @@ function populateStateData(state: UiState, data?: any) {
     if (errTitle) errTitle.textContent = data?.errorTitle || 'Página de sistema incompatível';
     if (errSub) errSub.textContent = data?.errorDetail || 'Navegadores bloqueiam extensões em abas internas';
     if (data?.url && errProto) errProto.textContent = `URL: ${data.url}`;
+  } else if (state === 'gravando') {
+    const gTitle = document.getElementById('gravandoTitle');
+    const gUrl = document.getElementById('gravandoUrl');
+    const gTimer = document.getElementById('gravandoTimer');
+    if (gTitle) gTitle.textContent = currentTabTitle || 'Gravando página ativa';
+    if (gUrl) gUrl.textContent = currentTabUrl || 'https://...';
+
+    const startTime = Date.now();
+    if (recordingTimerInterval) clearInterval(recordingTimerInterval);
+    recordingTimerInterval = setInterval(() => {
+      const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+      const mins = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+      const secs = String(elapsedSec % 60).padStart(2, '0');
+      if (gTimer) gTimer.textContent = `${mins}:${secs}`;
+    }, 500);
+  } else if (state === 'gravacao_erro') {
+    if (recordingTimerInterval) {
+      clearInterval(recordingTimerInterval);
+      recordingTimerInterval = null;
+    }
+    const origHost = currentTabOrigin ? new URL(currentTabOrigin).hostname : 'getartcraft.com';
+    const msgEl = document.getElementById('gravacaoErroMsg');
+    if (msgEl) {
+      if (data?.errorMsg) {
+        msgEl.textContent = data.errorMsg;
+      } else {
+        msgEl.textContent = `A gravação vale só para a página onde começou. Você saiu de ${origHost} para outro endereço.`;
+      }
+    }
+    const subEl = document.getElementById('gravacaoErroSub');
+    if (subEl) {
+      subEl.textContent = 'Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.';
+    }
+    const presEl = document.getElementById('gravacaoErroPreservada');
+    if (presEl && data?.retainedText) {
+      presEl.textContent = data.retainedText;
+    }
   }
 }
 
 // --------------------------------------------------------------------------
-// SVGs TABLER (MIT) EMBUTIDOS PARA A INTERFACE v11
+// SVGs TABLER (MIT) EMBUTIDOS PARA A INTERFACE v11 / v12
 // --------------------------------------------------------------------------
-function createTablerSparkles(): SVGSVGElement {
+export function createTablerSparkles(): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'tabler-icon');
   svg.setAttribute('width', '18');
@@ -742,6 +1011,104 @@ function createTablerArrowRight(): SVGSVGElement {
   return svg;
 }
 
+function createTablerArrowLeft(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2.5');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', 'M5 12l14 0 M5 12l6 6 M5 12l6 -6');
+  svg.appendChild(p);
+  return svg;
+}
+
+function createTablerDownload(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2.2');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', 'M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2 M7 11l5 5l5 -5 M12 4l0 12');
+  svg.appendChild(p);
+  return svg;
+}
+
+function createTablerRotate(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', 'M19.95 11a8 8 0 1 0 -.5 4m.5 5v-5h-5');
+  svg.appendChild(p);
+  return svg;
+}
+
+function createTablerSquare(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '15');
+  svg.setAttribute('height', '15');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', 'M5 5m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z');
+  svg.appendChild(p);
+  return svg;
+}
+
+function createTablerPlayerSkipForward(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'tabler-icon');
+  svg.setAttribute('width', '15');
+  svg.setAttribute('height', '15');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p1.setAttribute('d', 'M4 5v14l10 -7z');
+  const p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p2.setAttribute('d', 'M20 5l0 14');
+  svg.appendChild(p1);
+  svg.appendChild(p2);
+  return svg;
+}
+
 // --------------------------------------------------------------------------
 // RENDERIZAÇÃO SEGURA DOS BOTÕES DO RODAPÉ (ZERO innerHTML)
 // --------------------------------------------------------------------------
@@ -758,108 +1125,105 @@ function renderFooterActions(_data?: any) {
   if (currentState === 'inicio') {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'btn-primary btn-v11';
+    btn.className = 'btn-primary';
     btn.id = 'btnMainAction';
-    btn.onclick = () => handlePrimaryStart();
 
-    // Ícone Tabler Sparkles à esquerda
     btn.appendChild(createTablerSparkles());
 
-    // Bloco central com texto em Archivo Bold e sub em Special Elite
-    const centerWrap = document.createElement('div');
-    centerWrap.className = 'btn-v11-center';
-
-    const mainText = document.createElement('span');
-    mainText.className = 'btn-v11-title';
-
-    const subText = document.createElement('span');
-    subText.className = 'btn-v11-sub';
-
-    if (currentScope === 'esta_pagina') {
-      if (currentMode === 'html') {
-        mainText.textContent = 'Baixar HTML Autossuficiente';
-        subText.textContent = 'ARQUIVO ÚNICO .HTML';
-      } else if (currentMode === 'images') {
-        mainText.textContent = 'Baixar Galeria de Mídias';
-        subText.textContent = 'FOTOS E VETORES SVG EM ZIP';
-      } else {
-        mainText.textContent = 'Começar a arquivar';
-        subText.textContent = 'CÓPIA FIEL EM 1 CLIQUE · ARQUIVO .ZIP';
-      }
-    } else if (currentScope === 'paginas_vinculadas') {
-      mainText.textContent = 'Rastrear páginas vinculadas';
-      subText.textContent = 'ROTAS INTERNAS EM ZIP';
+    const label = document.createElement('span');
+    if (captureMethod === 'recording') {
+      label.textContent = 'Iniciar gravação manual';
+      btn.onclick = () => handleStartRecording();
+    } else if (currentMode === 'html') {
+      label.textContent = 'Baixar HTML Autossuficiente';
+      btn.onclick = () => handlePrimaryStart();
+    } else if (currentMode === 'images') {
+      label.textContent = 'Baixar Galeria de Mídias';
+      btn.onclick = () => handlePrimaryStart();
     } else {
-      mainText.textContent = 'Varredura Completa do Site';
-      subText.textContent = 'TODO O DOMÍNIO EM STREAMING';
+      label.textContent = 'Começar a arquivar';
+      btn.onclick = () => handlePrimaryStart();
     }
 
-    centerWrap.appendChild(mainText);
-    centerWrap.appendChild(subText);
-    btn.appendChild(centerWrap);
-
-    // Ícone Tabler Arrow Right à direita
+    btn.appendChild(label);
     btn.appendChild(createTablerArrowRight());
-
     footer.appendChild(btn);
-  } else if (currentState === 'rolando') {
-    const btnSkip = document.createElement('button');
-    btnSkip.type = 'button';
-    btnSkip.className = 'btn-secondary';
-    btnSkip.id = 'btnSkipScroll';
-    btnSkip.textContent = 'Pular rolagem e baixar agora';
-    btnSkip.onclick = () => {
+  } else if (currentState === 'rolando' || currentState === 'analisando' || currentState === 'baixando') {
+    const btnContainer = document.createElement('div');
+    btnContainer.style.display = 'flex';
+    btnContainer.style.flexDirection = 'column';
+    btnContainer.style.gap = '8px';
+    btnContainer.style.width = '100%';
+
+    // 1. Botão "Parar e salvar o que já baixou" (com badge GERAR ZIP)
+    const btnStopSave = document.createElement('button');
+    btnStopSave.type = 'button';
+    btnStopSave.className = 'btn-primary';
+    btnStopSave.id = 'btnStopAndSave';
+    btnStopSave.style.background = '#FFFFFF';
+    btnStopSave.style.color = '#0B0B0C';
+    btnStopSave.style.display = 'flex';
+    btnStopSave.style.justifyContent = 'space-between';
+    btnStopSave.style.alignItems = 'center';
+
+    const stopLeft = document.createElement('div');
+    stopLeft.style.display = 'flex';
+    stopLeft.style.alignItems = 'center';
+    stopLeft.style.gap = '8px';
+    stopLeft.appendChild(createTablerSquare());
+    const stopTxt = document.createElement('span');
+    stopTxt.textContent = 'Parar e salvar o que já baixou';
+    stopLeft.appendChild(stopTxt);
+    btnStopSave.appendChild(stopLeft);
+
+    const stopBadge = document.createElement('span');
+    stopBadge.className = 'type-special';
+    stopBadge.style.fontSize = '10.5px';
+    stopBadge.style.border = '1px solid #0B0B0C';
+    stopBadge.style.padding = '2px 5px';
+    stopBadge.style.borderRadius = '2px';
+    stopBadge.textContent = 'GERAR ZIP';
+    btnStopSave.appendChild(stopBadge);
+
+    btnStopSave.onclick = () => {
+      requestStopAndSaveRequested = true;
       skipAutoscrollRequested = true;
     };
 
-    note.textContent = 'A extração continuará com os recursos já carregados';
-    footer.appendChild(btnSkip);
-    footer.appendChild(note);
-  } else if (currentState === 'analisando') {
-    const btnCancel = document.createElement('button');
-    btnCancel.type = 'button';
-    btnCancel.className = 'btn-secondary';
-    btnCancel.id = 'btnCancelAnalysis';
-    btnCancel.textContent = 'Cancelar análise';
-    btnCancel.onclick = () => {
-      isCaptureCancelled = true;
-      setState('inicio');
+    // 2. Botão "Pular"
+    const btnSkip = document.createElement('button');
+    btnSkip.type = 'button';
+    btnSkip.className = 'btn-secondary';
+    btnSkip.id = currentState === 'rolando' ? 'btnSkipScroll' : 'btnSkipCurrent';
+    btnSkip.style.display = 'flex';
+    btnSkip.style.alignItems = 'center';
+    btnSkip.style.justifyContent = 'center';
+    btnSkip.style.gap = '8px';
+
+    btnSkip.appendChild(createTablerPlayerSkipForward());
+
+    const skipTxt = document.createElement('span');
+    if (currentState === 'rolando') {
+      skipTxt.textContent = 'Pular rolagem';
+    } else if (currentMode === 'images') {
+      skipTxt.textContent = 'Pular esta mídia';
+    } else {
+      skipTxt.textContent = 'Pular esta página';
+    }
+    btnSkip.appendChild(skipTxt);
+
+    btnSkip.onclick = () => {
+      if (currentState === 'rolando') {
+        skipAutoscrollRequested = true;
+      } else {
+        requestSkipCurrentRequested = true;
+      }
     };
 
-    note.textContent = 'Descarta a fila de páginas e interrompe o crawler';
-    footer.appendChild(btnCancel);
-    footer.appendChild(note);
-  } else if (currentState === 'baixando') {
-    const dual = document.createElement('div');
-    dual.className = 'btn-dual';
+    btnContainer.appendChild(btnStopSave);
+    btnContainer.appendChild(btnSkip);
 
-    const btnPause = document.createElement('button');
-    btnPause.type = 'button';
-    btnPause.className = 'btn-secondary';
-    btnPause.id = 'btnPauseDownload';
-    btnPause.textContent = 'Pausar';
-    btnPause.onclick = () => {
-      isCapturePaused = true;
-      setState('pausado');
-    };
-
-    const btnCancel = document.createElement('button');
-    btnCancel.type = 'button';
-    btnCancel.className = 'btn-secondary';
-    btnCancel.id = 'btnCancelDownload';
-    btnCancel.textContent = 'Cancelar';
-    btnCancel.onclick = () => {
-      isCaptureCancelled = true;
-      cleanupResources();
-      setState('inicio');
-    };
-
-    dual.appendChild(btnPause);
-    dual.appendChild(btnCancel);
-
-    note.textContent = 'O progresso parcial permanece retido na memória temporária';
-    footer.appendChild(dual);
-    footer.appendChild(note);
+    footer.appendChild(btnContainer);
   } else if (currentState === 'pausado') {
     const dual = document.createElement('div');
     dual.className = 'btn-dual';
@@ -894,31 +1258,98 @@ function renderFooterActions(_data?: any) {
     btnOpen.type = 'button';
     btnOpen.className = 'btn-primary';
     btnOpen.id = 'btnOpenResult';
+    btnOpen.style.display = 'none';
     btnOpen.textContent = currentMode === 'html' ? 'Abrir Arquivo HTML' : 'Abrir Arquivo ZIP';
-    btnOpen.onclick = () => {
-      if (typeof chrome !== 'undefined' && chrome.downloads && typeof chrome.downloads.showDefaultFolder === 'function') {
-        try {
-          chrome.downloads.showDefaultFolder();
-        } catch {}
-      } else {
-        resetToInitialState();
-      }
+
+    const btnAgain = document.createElement('button');
+    btnAgain.type = 'button';
+    btnAgain.className = 'btn-primary';
+    btnAgain.id = 'btnDownloadAgain';
+
+    const againInner = document.createElement('div');
+    againInner.style.display = 'flex';
+    againInner.style.alignItems = 'center';
+    againInner.style.gap = '8px';
+    againInner.appendChild(createTablerDownload());
+    const againTxt = document.createElement('span');
+    againTxt.textContent = 'Baixar novamente';
+    againInner.appendChild(againTxt);
+
+    btnAgain.appendChild(againInner);
+    btnAgain.appendChild(createTablerArrowRight());
+    btnAgain.onclick = () => {
+      downloadAgain();
     };
 
     const btnBack = document.createElement('button');
     btnBack.type = 'button';
     btnBack.className = 'btn-secondary btn-small';
     btnBack.id = 'btnBackToStart';
-    btnBack.textContent = 'Voltar ao início';
     btnBack.setAttribute('aria-label', 'Voltar ao início');
+    btnBack.appendChild(createTablerArrowLeft());
+    const backTxt = document.createElement('span');
+    backTxt.textContent = 'Voltar ao início';
+    btnBack.appendChild(backTxt);
     btnBack.onclick = () => {
       resetToInitialState();
     };
 
-    note.textContent = 'Arquivo pronto na pasta Downloads do navegador';
     footer.appendChild(btnOpen);
+    footer.appendChild(btnAgain);
     footer.appendChild(btnBack);
-    footer.appendChild(note);
+  } else if (currentState === 'gravando') {
+    const btnStop = document.createElement('button');
+    btnStop.type = 'button';
+    btnStop.className = 'btn-primary';
+    btnStop.id = 'btnStopRecording';
+    btnStop.textContent = 'Parar e Salvar';
+    btnStop.onclick = () => {
+      handleStopRecording();
+    };
+
+    footer.appendChild(btnStop);
+  } else if (currentState === 'gravacao_erro') {
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '8px';
+    wrap.style.width = '100%';
+
+    const btnSave = document.createElement('button');
+    btnSave.type = 'button';
+    btnSave.className = 'btn-primary';
+    btnSave.id = 'btnSaveRecorded';
+
+    const saveInner = document.createElement('div');
+    saveInner.style.display = 'flex';
+    saveInner.style.alignItems = 'center';
+    saveInner.style.gap = '8px';
+    saveInner.appendChild(createTablerDownload());
+    const saveTxt = document.createElement('span');
+    saveTxt.textContent = 'Salvar o que já gravei';
+    saveInner.appendChild(saveTxt);
+
+    btnSave.appendChild(saveInner);
+    btnSave.appendChild(createTablerArrowRight());
+    btnSave.onclick = () => {
+      handleSaveRecorded();
+    };
+
+    const btnRestart = document.createElement('button');
+    btnRestart.type = 'button';
+    btnRestart.className = 'btn-secondary';
+    btnRestart.id = 'btnRestartRecording';
+    btnRestart.appendChild(createTablerRotate());
+    const restartTxt = document.createElement('span');
+    restartTxt.textContent = 'Recomeçar na página original';
+    btnRestart.appendChild(restartTxt);
+    btnRestart.onclick = () => {
+      handleRestartRecording();
+    };
+
+    wrap.appendChild(btnSave);
+    wrap.appendChild(btnRestart);
+    footer.appendChild(wrap);
   } else if (currentState === 'sem_acesso') {
     const btnDis = document.createElement('button');
     btnDis.type = 'button';
@@ -1264,11 +1695,16 @@ export function updateWebGLNotice() {
 export function selectMode(mode: UiMode | 'piece' | 'site') {
   if (mode === 'piece') {
     currentMode = 'zip';
+    setScope('esta_pagina');
   } else if (mode === 'site') {
     currentMode = 'zip';
     setScope('site_inteiro');
+  } else if (mode === 'images') {
+    currentMode = 'images';
+    setScope('esta_pagina');
   } else {
     currentMode = mode;
+    setScope('esta_pagina');
   }
 
   const mZip = document.getElementById('mode-zip');
@@ -1360,7 +1796,11 @@ async function handlePrimaryStart() {
 }
 
 async function executeCaptureFlow() {
+  // O tempo de rolagem escolhido conta a partir do clique (inclui reload do CDP), como o usuário cronometra
+  const flowStartedAt = Date.now();
   skipAutoscrollRequested = false;
+  requestSkipCurrentRequested = false;
+  requestStopAndSaveRequested = false;
   isCapturePaused = false;
   isCaptureCancelled = false;
 
@@ -1371,7 +1811,6 @@ async function executeCaptureFlow() {
       await activeRecorder.start();
 
       // Recarrega a aba sob o depurador CDP para registrar 100% dos recursos iniciais (WASM, 3D, Shaders, Webfonts)
-      setState('rolando', { currentY: 0, maxY: 1000, step: 0, imagesCount: 0 });
       if (chrome.tabs && typeof chrome.tabs.reload === 'function') {
         await new Promise<void>((resolve) => {
           chrome.tabs.reload(currentTabId!, { bypassCache: true }, () => resolve());
@@ -1410,7 +1849,7 @@ async function executeCaptureFlow() {
   // 1. Fase de Rolagem (se habilitada)
   if (autoscrollOn && currentTabId) {
     setState('rolando', { currentY: 0, maxY: 1000, step: 0, imagesCount: 0 });
-    await runRealAutoscrollInTab(currentTabId);
+    await runRealAutoscrollInTab(currentTabId, getActiveAutoscrollOptions(), flowStartedAt);
     if (isCaptureCancelled) {
       if (activeRecorder) await activeRecorder.stop().catch(() => {});
       return;
@@ -1427,10 +1866,28 @@ async function executeCaptureFlow() {
 }
 
 // Execução de autoscroll no DOM da aba ativa com métricas reais
-async function runRealAutoscrollInTab(tabId: number): Promise<void> {
-  const step = 400;
-  const intervalMs = 150;
+async function runRealAutoscrollInTab(
+  tabId: number,
+  customOpts?: AutoscrollOptions,
+  startTime: number = Date.now()
+): Promise<void> {
+  const opts = customOpts || getActiveAutoscrollOptions();
+  const step = opts.step || 400;
+  const intervalMs = opts.intervalMs || 150;
   let stepIndex = 0;
+
+  const limitType = opts.limitType || 'screens';
+  const maxScreens = opts.maxScreens !== undefined ? opts.maxScreens : 10;
+  const maxTimeSeconds = opts.maxTimeSeconds !== undefined ? opts.maxTimeSeconds : (limitType === 'time' ? 30 : 60);
+  const maxDurationMs =
+    limitType === 'time'
+      ? maxTimeSeconds * 1000
+      : (limitType === 'unlimited' ? 3600000 : maxTimeSeconds * 1000);
+  const maxHeight = limitType === 'unlimited' ? 1000000 : 60000;
+  // Volta ao topo + estabilização do Hero cabe dentro do tempo pedido
+  const settleMs = 1500;
+  const scrollBudgetMs = limitType === 'time' ? Math.max(0, maxDurationMs - settleMs) : maxDurationMs;
+  const viewportHeight = 800;
 
   try {
     // Coleta altura inicial
@@ -1456,54 +1913,79 @@ async function runRealAutoscrollInTab(tabId: number): Promise<void> {
     let docHeight = Math.max(1000, initMetrics?.h || 1000);
     let currentY = 0;
 
-    while (currentY < docHeight && currentY < 60000) {
-      if (skipAutoscrollRequested || isCaptureCancelled) {
+    while (
+      (limitType === 'time' || currentY < docHeight) &&
+      (limitType === 'time' || currentY < maxHeight)
+    ) {
+      if (skipAutoscrollRequested || requestSkipCurrentRequested || requestStopAndSaveRequested || isCaptureCancelled) {
+        requestSkipCurrentRequested = false;
         break;
       }
 
-      currentY += step;
+      if (Date.now() - startTime >= scrollBudgetMs) {
+        break;
+      }
+
+      const currentScreens = Math.floor(currentY / viewportHeight);
+      if (limitType === 'screens' && currentScreens >= maxScreens) {
+        break;
+      }
+
+      if (currentY < docHeight) {
+        currentY = Math.min(docHeight, currentY + step);
+      }
       stepIndex++;
 
-      const [{ result: metrics }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: (targetY, stepDelta) => {
-          try {
-            window.scrollTo({ top: targetY, behavior: 'instant' });
-            window.dispatchEvent(new WheelEvent('wheel', { deltaY: stepDelta, bubbles: true }));
-            const win = window as any;
-            if (win.lenis && typeof win.lenis.scrollTo === 'function') {
-              try { win.lenis.scrollTo(targetY, { immediate: true }); } catch {}
+      try {
+        const [{ result: metrics }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (targetY, stepDelta) => {
+            try {
+              window.scrollTo({ top: targetY, behavior: 'instant' });
+              window.dispatchEvent(new WheelEvent('wheel', { deltaY: stepDelta, bubbles: true }));
+              const win = window as any;
+              if (win.lenis && typeof win.lenis.scrollTo === 'function') {
+                try { win.lenis.scrollTo(targetY, { immediate: true }); } catch {}
+              }
+            } catch {}
+
+            const b = document.body;
+            const h = document.documentElement;
+            const scrollEl = document.scrollingElement || h || b;
+            if (scrollEl && typeof (scrollEl as any).scrollTop === 'number') {
+              try { (scrollEl as any).scrollTop = targetY; } catch {}
             }
-          } catch {}
 
-          const b = document.body;
-          const h = document.documentElement;
-          const totalH = Math.max(
-            b ? b.scrollHeight : 0,
-            b ? b.offsetHeight : 0,
-            h ? h.clientHeight : 0,
-            h ? h.scrollHeight : 0,
-            h ? h.offsetHeight : 0
-          );
+            const totalH = Math.max(
+              b ? b.scrollHeight : 0,
+              b ? b.offsetHeight : 0,
+              h ? h.clientHeight : 0,
+              h ? h.scrollHeight : 0,
+              h ? h.offsetHeight : 0,
+              scrollEl ? scrollEl.scrollHeight : 0
+            );
 
-          return {
-            totalH,
-            actualY: Math.round(window.scrollY),
-            imgs: document.images ? document.images.length : 0
-          };
-        },
-        args: [currentY, step]
-      });
+            return {
+              totalH,
+              actualY: Math.round(window.scrollY || (scrollEl ? scrollEl.scrollTop : 0)),
+              imgs: document.images ? document.images.length : 0
+            };
+          },
+          args: [currentY, step]
+        });
 
-      if (metrics && metrics.totalH > docHeight) docHeight = metrics.totalH;
+        if (metrics && metrics.totalH > docHeight) docHeight = metrics.totalH;
 
-      setState('rolando', {
-        currentY: Math.min(currentY, docHeight),
-        maxY: docHeight,
-        step: stepIndex,
-        intervalMs,
-        imagesCount: metrics?.imgs || 0
-      });
+        setState('rolando', {
+          currentY: Math.min(currentY, docHeight),
+          maxY: docHeight,
+          step: stepIndex,
+          intervalMs,
+          imagesCount: metrics?.imgs || 0
+        });
+      } catch (stepErr) {
+        // Ignora erro passageiro durante frames ocupados para não interromper a rolagem
+      }
 
       await new Promise((r) => setTimeout(r, intervalMs));
     }
@@ -1521,7 +2003,7 @@ async function runRealAutoscrollInTab(tabId: number): Promise<void> {
         } catch {}
       }
     });
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, settleMs));
   } catch (err) {
     console.warn('Erro ao executar autoscroll na aba:', err);
   }
@@ -1605,7 +2087,16 @@ async function performRealCapture(
       try {
         const [{ result: pageData }] = await chrome.scripting.executeScript({
           target: { tabId: currentTabId },
-          func: (mode: string, snapshots: Array<{ index: number; dataUrl: string }>) => {
+          func: (mode: string, snapshots: Array<{ index: number; dataUrl: string }>, serializeFnCode: string) => {
+            const getDomHtml = () => {
+              try {
+                const fn = new Function('return (' + serializeFnCode + ')()');
+                const s = fn();
+                if (s && s.length > 50) return s;
+              } catch {}
+              return document.documentElement.outerHTML;
+            };
+
             // Se for modo HTML autossuficiente (sem scripts), congela o estado visível e converte canvas
             if (mode === 'html') {
               try {
@@ -1668,7 +2159,7 @@ async function performRealCapture(
                   } catch {}
                 });
 
-                const html = document.documentElement.outerHTML;
+                const html = getDomHtml();
                 const title = document.title || 'Página';
 
                 // Restaura o DOM original na aba ativa para não interferir na renderização viva
@@ -1680,11 +2171,11 @@ async function performRealCapture(
             }
 
             return {
-              html: document.documentElement.outerHTML,
+              html: getDomHtml(),
               title: document.title || 'Página'
             };
           },
-          args: [currentMode, canvasSnapshots]
+          args: [currentMode, canvasSnapshots, serializeLiveDom.toString()]
         });
         if (pageData && pageData.html) {
           pageRawHtml = pageData.html;
@@ -1698,7 +2189,7 @@ async function performRealCapture(
     // Se executeScript falhar e tivermos gravador ativo ou debugger, tenta via CDP
     if (!pageRawHtml && existingRecorder) {
       try {
-        const cdpHtml = await existingRecorder.evaluate('document.documentElement.outerHTML');
+        const cdpHtml = await existingRecorder.evaluate(`(${serializeLiveDom.toString()})()`);
         if (cdpHtml) pageRawHtml = cdpHtml;
       } catch (cdpErr) {
         console.warn('CDP recorder evaluate falhou:', cdpErr);
@@ -1707,7 +2198,7 @@ async function performRealCapture(
       try {
         await chrome.debugger.attach({ tabId: currentTabId }, '1.3');
         const evalRes: any = await chrome.debugger.sendCommand({ tabId: currentTabId }, 'Runtime.evaluate', {
-          expression: 'document.documentElement.outerHTML',
+          expression: `(${serializeLiveDom.toString()})()`,
           returnByValue: true
         });
         if (evalRes?.result?.value) {
@@ -1720,8 +2211,14 @@ async function performRealCapture(
     }
 
     // Se for modo ZIP (Página Completa Fiel), prioriza o HTML inicial limpo para preservar
-    // hidratação limpa do React, Lenis funcionando desde o scroll 0 e parallax idêntico ao vivo
-    if (currentMode === 'zip' && initialCleanHtml && isValidDocumentHtml(initialCleanHtml)) {
+    // hidratação limpa do React, Lenis funcionando desde o scroll 0 e parallax idêntico ao vivo,
+    // DESDE QUE não seja um esqueleto não-hidratado (ex: YouTube, SPAs com skeleton)
+    if (
+      currentMode === 'zip' &&
+      initialCleanHtml &&
+      isValidDocumentHtml(initialCleanHtml) &&
+      !isSpaSkeleton(initialCleanHtml)
+    ) {
       pageRawHtml = initialCleanHtml;
     }
 
@@ -1731,7 +2228,7 @@ async function performRealCapture(
     }
 
     // 2. Executa o módulo de acordo com o modo e escopo
-    if (currentScope === 'esta_pagina' && currentMode === 'html') {
+    if (currentMode === 'html') {
       const res = await pageHtmlModule.run({
         tabId: currentTabId || undefined,
         url: currentTabUrl,
@@ -1769,26 +2266,71 @@ async function performRealCapture(
       return;
     }
 
-    if (currentScope === 'esta_pagina' && currentMode === 'images') {
-      const res = await imagesZipModule.run({
-        tabId: currentTabId || undefined,
-        url: currentTabUrl,
+    if (currentMode === 'images') {
+      const selectedTypes: MediaType[] = [];
+      const chkImg = document.getElementById('mediaCheckImg') as HTMLInputElement | null;
+      const chkSvg = document.getElementById('mediaCheckSvg') as HTMLInputElement | null;
+      const chkVid = document.getElementById('mediaCheckVid') as HTMLInputElement | null;
+      const chkAud = document.getElementById('mediaCheckAud') as HTMLInputElement | null;
+
+      if (!chkImg || chkImg.checked) selectedTypes.push('image');
+      if (!chkSvg || chkSvg.checked) selectedTypes.push('svg');
+      if (chkVid && chkVid.checked) selectedTypes.push('video');
+      if (chkAud && chkAud.checked) selectedTypes.push('audio');
+      if (selectedTypes.length === 0) {
+        selectedTypes.push('image', 'svg');
+      }
+
+      let mediaMaxCount: number = 200;
+      const activeCountChip = document.querySelector('#mediaCountChips .chip-option.active');
+      if (activeCountChip) {
+        const val = activeCountChip.getAttribute('data-val');
+        if (val === 'unlimited' || val === '999') mediaMaxCount = Infinity;
+        else if (val) mediaMaxCount = parseInt(val, 10) || 200;
+      }
+
+      let mediaMaxBytes: number = 50 * 1024 * 1024;
+      const activeSizeChip = document.querySelector('#mediaSizeChips .chip-option.active');
+      if (activeSizeChip) {
+        const val = activeSizeChip.getAttribute('data-val');
+        if (val === 'unlimited' || val === '999') mediaMaxBytes = Infinity;
+        else if (val) mediaMaxBytes = (parseInt(val, 10) || 50) * 1024 * 1024;
+      }
+
+      const parser = new DOMParser();
+      const domDoc = parser.parseFromString(pageRawHtml, 'text/html');
+      const candidates = collectMediaFromDom(domDoc, currentTabUrl || 'http://localhost', selectedTypes);
+
+      const res = await captureMediaZip({
+        candidates,
         title: currentTabTitle,
-        html: pageRawHtml,
-        onProgress: (loaded, total, item) => {
+        pageUrl: currentTabUrl,
+        types: selectedTypes,
+        maxItems: mediaMaxCount,
+        maxPerItemBytes: mediaMaxBytes,
+        foldersByType: true,
+        shouldSkipCurrent: () => {
+          if (requestSkipCurrentRequested) {
+            requestSkipCurrentRequested = false;
+            return true;
+          }
+          return false;
+        },
+        shouldStop: () => requestStopAndSaveRequested || isCaptureCancelled,
+        onProgress: (loaded: number, total: number, item?: string) => {
           const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
           const elapsed = formatTimer((performance.now() - startTime) / 1000);
           setState('baixando', {
             pct,
             loaded,
             total,
-            currentItem: item || 'Gravando imagem...',
+            currentItem: item || 'Gravando mídia...',
             pagesDone: 1,
             pagesTotal: 1,
-            mb: (loaded * 0.15).toFixed(1).replace('.', ','),
+            mb: ((loaded * 80) / 1024).toFixed(1).replace('.', ','),
             elapsedTime: elapsed,
-            nextItem: 'Galeria de imagens',
-            nextDesc: `${total - loaded} itens restantes`
+            nextItem: 'Galeria de mídias',
+            nextDesc: `${Math.max(0, total - loaded)} itens restantes`
           });
         }
       });
@@ -1801,11 +2343,11 @@ async function performRealCapture(
         filename: res.filename,
         sizeText,
         pages: 1,
-        totalAssets: res.itemCount,
-        imagesCount: res.itemCount,
+        totalAssets: res.stats.totalAssets,
+        imagesCount: res.stats.savedAssets,
         cssCount: 0,
         fontsCount: 0,
-        corsErrors: res.incomplete ? 1 : 0,
+        corsErrors: res.stats.corsBlockedAssets || 0,
         timeoutErrors: 0,
         elapsedTime: elapsed
       });
@@ -1827,7 +2369,16 @@ async function performRealCapture(
         allowedExternalDomains: Array.from(confirmedExternalDomains)
       },
       autoscroll: false, // autoscroll já foi executado na fase rolando
+      autoscrollOptions: getActiveAutoscrollOptions(),
       recorder: existingRecorder || undefined,
+      shouldSkipCurrent: () => {
+        if (requestSkipCurrentRequested) {
+          requestSkipCurrentRequested = false;
+          return true;
+        }
+        return false;
+      },
+      shouldStop: () => requestStopAndSaveRequested || isCaptureCancelled,
       onProgress: async (loaded, total, item) => {
         while (isCapturePaused && !isCaptureCancelled) {
           await new Promise((r) => setTimeout(r, 200));
@@ -1925,9 +2476,185 @@ async function finishWithPartialZip() {
 }
 
 // --------------------------------------------------------------------------
-// DISPARO SEGURO DE DOWNLOAD NO NAVEGADOR
+// DISPARO SEGURO DE DOWNLOAD NO NAVEGADOR E RETENÇÃO EM MEMÓRIA (SPEC-v12)
 // --------------------------------------------------------------------------
-let lastDownloadInfo: { filename: string; size: number; base64: string } | null = null;
+export async function downloadAgain(): Promise<void> {
+  // SPEC-v12: Baixar novamente funciona com qualquer aba ativa enquanto o painel estiver aberto
+  if (inMemoryArchivedFile) {
+    try {
+      await triggerBrowserDownload(inMemoryArchivedFile.blob, inMemoryArchivedFile.filename);
+      return;
+    } catch (err) {
+      console.warn('Erro ao rebaixar via inMemoryArchivedFile:', err);
+    }
+  }
+
+  if (!lastDownloadInfo) return;
+  try {
+    const binary = atob(lastDownloadInfo.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const mime = lastDownloadInfo.filename.endsWith('.html') ? 'text/html' : 'application/zip';
+    const blob = new Blob([bytes], { type: mime });
+    await triggerBrowserDownload(blob, lastDownloadInfo.filename);
+  } catch (err) {
+    console.warn('Erro ao rebaixar arquivo em memória:', err);
+  }
+}
+
+// --------------------------------------------------------------------------
+// GRAVAÇÃO MANUAL DE SESSÃO NA PÁGINA ATIVA (SPEC-v12)
+// --------------------------------------------------------------------------
+export async function handleStartRecording(): Promise<void> {
+  if (!currentTabUrl || !validateUrl(currentTabUrl, true).valid || isSystemBrowserPage(currentTabUrl)) {
+    setState('erro');
+    return;
+  }
+  if (!currentTabId) {
+    setState('sem_acesso');
+    return;
+  }
+
+  try {
+    await sessionRecorder.start(currentTabId, currentTabUrl, (errorMsg, state) => {
+      setState('gravacao_erro', { errorMsg, navigatedToUrl: state.navigatedToUrl });
+    });
+    setState('gravando');
+  } catch (err) {
+    console.warn('Erro ao iniciar SessionRecorder:', err);
+  }
+}
+
+export async function handleStopRecording(): Promise<void> {
+  if (recordingTimerInterval) {
+    clearInterval(recordingTimerInterval);
+    recordingTimerInterval = null;
+  }
+  const { resources } = await sessionRecorder.stop();
+  await finishRecordingCapture(resources);
+}
+
+export async function handleSaveRecorded(): Promise<void> {
+  if (recordingTimerInterval) {
+    clearInterval(recordingTimerInterval);
+    recordingTimerInterval = null;
+  }
+  const { resources } = await sessionRecorder.stop();
+  await finishRecordingCapture(resources);
+}
+
+export function handleRestartRecording(): void {
+  resetToInitialState();
+}
+
+export async function finishRecordingCapture(resources: CapturedResource[]): Promise<void> {
+  const startTime = performance.now();
+  setState('baixando', {
+    pct: 0,
+    loaded: resources.length,
+    total: Math.max(1, resources.length),
+    currentItem: 'Processando recursos gravados...',
+    pagesDone: 1,
+    pagesTotal: 1,
+    mb: '0,1',
+    elapsedTime: '00:00',
+    nextItem: currentTabTitle,
+    nextDesc: 'Compactando recursos capturados na sessão'
+  });
+
+  try {
+    let pageRawHtml = targetTabOverrideHtml || '';
+    if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && currentTabId) {
+      try {
+        const [{ result: pageData }] = await chrome.scripting.executeScript({
+          target: { tabId: currentTabId },
+          func: (serializeFnCode: string) => {
+            try {
+              const fn = new Function('return (' + serializeFnCode + ')()');
+              const s = fn();
+              if (s && s.length > 50) return s;
+            } catch {}
+            return document.documentElement.outerHTML;
+          },
+          args: [serializeLiveDom.toString()]
+        });
+        if (pageData) pageRawHtml = pageData;
+      } catch (e) {
+        console.warn('Erro ao obter DOM na finalização da gravação:', e);
+      }
+    }
+
+    if (!isValidDocumentHtml(pageRawHtml)) {
+      pageRawHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${currentTabTitle || 'Página'}</title></head><body><h1>${currentTabTitle || 'Página Gravada'}</h1></body></html>`;
+    }
+
+    const result = await captureFaithfulSite({
+      tabId: currentTabId || undefined,
+      url: currentTabUrl,
+      title: currentTabTitle,
+      html: pageRawHtml,
+      mode: 'page',
+      limits: {
+        maxPages: 1,
+        maxBytes: limitMb * 1024 * 1024,
+        includeSubdomains: false
+      },
+      autoscroll: false,
+      customResources: resources,
+      onProgress: (loaded, total, item) => {
+        const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+        const elapsed = formatTimer((performance.now() - startTime) / 1000);
+        setState('baixando', {
+          pct,
+          loaded,
+          total,
+          currentItem: item || 'Compactando gravação...',
+          pagesDone: 1,
+          pagesTotal: 1,
+          mb: ((loaded * 80) / 1024).toFixed(1).replace('.', ','),
+          elapsedTime: elapsed
+        });
+      }
+    });
+
+    partialFilesRetained = result.files;
+    await triggerBrowserDownload(result.blob, result.filename);
+
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
+    const sizeText = formatBytes(result.blob.size);
+
+    let cssCount = 0;
+    let fontsCount = 0;
+    let imagesCount = 0;
+    for (const p of Object.keys(result.files)) {
+      if (p.endsWith('.css')) cssCount++;
+      else if (p.endsWith('.woff') || p.endsWith('.woff2') || p.endsWith('.ttf')) fontsCount++;
+      else if (p.match(/\.(png|jpg|jpeg|webp|svg|gif|avif)$/i)) imagesCount++;
+    }
+
+    setState('pronto', {
+      filename: result.filename,
+      sizeText,
+      pages: result.stats.totalPages,
+      totalAssets: result.stats.totalAssets,
+      cssCount,
+      fontsCount,
+      imagesCount,
+      corsErrors: result.stats.brokenImages,
+      timeoutErrors: 0,
+      elapsedTime: elapsed
+    });
+  } catch (err: any) {
+    console.error('Erro ao finalizar gravação manual:', err);
+    setState('erro', {
+      errorTitle: 'Falha ao Salvar Gravação',
+      errorDetail: err?.message || 'Não foi possível empacotar os recursos gravados.',
+      url: currentTabUrl
+    });
+  }
+}
 
 async function triggerBrowserDownload(blob: Blob, filename: string): Promise<void> {
   try {
@@ -1943,6 +2670,11 @@ async function triggerBrowserDownload(blob: Blob, filename: string): Promise<voi
     lastDownloadInfo = {
       filename,
       size: blob.size,
+      base64: b64
+    };
+    inMemoryArchivedFile = {
+      filename,
+      blob,
       base64: b64
     };
   } catch (err) {
@@ -2254,7 +2986,7 @@ export function initSidePanel() {
         ver = chrome.runtime.getManifest()?.version || ver;
       } catch {}
     }
-    brandTag.textContent = `v${ver} · Painel Lateral`;
+    brandTag.textContent = 'v0.2';
   }
 
   // Bind Scope Tabs
@@ -2317,14 +3049,217 @@ export function initSidePanel() {
     };
   }
 
-  // Bind Record Clicks Switch (v11)
+  // Bind Botões de Configuração de Opções (v12)
+  const btnCfgSite = document.getElementById('btnConfigSite');
+  if (btnCfgSite) {
+    btnCfgSite.onclick = (e) => {
+      e.stopPropagation();
+      selectMode('site');
+      setState('opcoes', { subview: 'site' });
+    };
+  }
+
+  const btnCfgMidias = document.getElementById('btnConfigMidias');
+  if (btnCfgMidias) {
+    btnCfgMidias.onclick = (e) => {
+      e.stopPropagation();
+      selectMode('images');
+      setState('opcoes', { subview: 'midias' });
+    };
+  }
+
+  const btnBackOpt = document.getElementById('btnBackFromOptions');
+  if (btnBackOpt) {
+    btnBackOpt.onclick = () => {
+      setState('inicio');
+    };
+  }
+
+  const btnSaveOpt = document.getElementById('btnSaveOptions');
+  if (btnSaveOpt) {
+    btnSaveOpt.onclick = () => {
+      setState('inicio');
+    };
+  }
+
+  // Bind Opções de Site Inteiro (Chips & Subdomínios)
+  const sitePages = document.querySelectorAll('#sitePagesChips .chip-option');
+  sitePages.forEach((c) => {
+    (c as HTMLElement).onclick = () => {
+      sitePages.forEach((x) => x.classList.remove('active'));
+      c.classList.add('active');
+      const val = parseInt(c.getAttribute('data-val') || '20', 10);
+      setLimitPage(val);
+    };
+  });
+
+  const siteDepth = document.querySelectorAll('#siteDepthChips .chip-option');
+  siteDepth.forEach((c) => {
+    (c as HTMLElement).onclick = () => {
+      siteDepth.forEach((x) => x.classList.remove('active'));
+      c.classList.add('active');
+    };
+  });
+
+  const siteSubSw = document.getElementById('siteSubdomainsSwitch');
+  if (siteSubSw) {
+    siteSubSw.onclick = () => {
+      includeSubdomains = !includeSubdomains;
+      siteSubSw.className = includeSubdomains ? 'switch-track' : 'switch-track off';
+      siteSubSw.setAttribute('aria-checked', includeSubdomains ? 'true' : 'false');
+    };
+  }
+
+  // Bind Opções de Mídias (Filtros & Limites)
+  ['Img', 'Svg', 'Vid', 'Aud'].forEach((key) => {
+    const card = document.getElementById(`mediaCard${key}`);
+    const chk = document.getElementById(`mediaCheck${key}`) as HTMLInputElement;
+    if (card && chk) {
+      const updateVisual = () => {
+        const checkIcon = card.querySelector('.custom-check');
+        if (chk.checked) {
+          card.classList.add('active');
+          checkIcon?.classList.add('checked');
+        } else {
+          card.classList.remove('active');
+          checkIcon?.classList.remove('checked');
+        }
+      };
+
+      // O card é um <label> contendo o checkbox. O navegador já inverte nativamente o input
+      // ao clicar no label. Ouvir 'change' no input evita o bug de inversão dupla que existia com onclick.
+      chk.addEventListener('change', updateVisual);
+      updateVisual();
+    }
+  });
+
+  const mCounts = document.querySelectorAll('#mediaCountChips .chip-option');
+  mCounts.forEach((c) => {
+    (c as HTMLElement).onclick = () => {
+      mCounts.forEach((x) => x.classList.remove('active'));
+      c.classList.add('active');
+    };
+  });
+
+  const mSizes = document.querySelectorAll('#mediaSizeChips .chip-option');
+  mSizes.forEach((c) => {
+    (c as HTMLElement).onclick = () => {
+      mSizes.forEach((x) => x.classList.remove('active'));
+      c.classList.add('active');
+    };
+  });
+
+  const cardScreens = document.getElementById('scrollCardScreens');
+  const cardTime = document.getElementById('scrollCardTime');
+  const cardUnlimited = document.getElementById('scrollCardUnlimited');
+  if (cardScreens) cardScreens.onclick = () => setScrollLimitChoice('10');
+  if (cardTime) cardTime.onclick = () => setScrollLimitChoice('30');
+  if (cardUnlimited) cardUnlimited.onclick = () => setScrollLimitChoice('unlimited');
+
+  const scrollChips = document.querySelectorAll('#scrollLimitChips .chip-option');
+  scrollChips.forEach((c) => {
+    (c as HTMLElement).onclick = () => {
+      const v = c.getAttribute('data-val');
+      if (v === '30') setScrollLimitChoice('30');
+      else if (v === '999' || v === 'unlimited') setScrollLimitChoice('unlimited');
+      else setScrollLimitChoice('10');
+    };
+  });
+
+  // Bind Linhas de Opção de Captura (Automático x Gravação manual com rádio exclusivo)
+  const optAuto = document.getElementById('optAutoRow');
+  const optRec = document.getElementById('optRecRow');
+  const autoCircle = document.getElementById('autoRadioCircle');
+  const recCircle = document.getElementById('recRadioCircle');
+
+  if (optAuto) {
+    optAuto.onclick = () => {
+      captureMethod = 'automatic';
+      autoscrollOn = true;
+      if (autoSw) {
+        autoSw.className = 'switch-track';
+        autoSw.setAttribute('aria-checked', 'true');
+      }
+      if (recSw) {
+        recSw.className = 'switch-track off';
+        recSw.setAttribute('aria-checked', 'false');
+      }
+      if (autoCircle) {
+        autoCircle.classList.add('active');
+        autoCircle.innerHTML = '<div class="radio-dot"></div>';
+      }
+      if (recCircle) {
+        recCircle.classList.remove('active');
+        recCircle.innerHTML = '';
+      }
+      optAuto.classList.add('selected');
+      optAuto.setAttribute('aria-checked', 'true');
+      if (optRec) {
+        optRec.classList.remove('selected');
+        optRec.setAttribute('aria-checked', 'false');
+      }
+      if (currentState === 'inicio') renderFooterActions();
+    };
+  }
+  if (optRec) {
+    optRec.onclick = () => {
+      captureMethod = 'recording';
+      autoscrollOn = false;
+      if (recSw) {
+        recSw.className = 'switch-track';
+        recSw.setAttribute('aria-checked', 'true');
+      }
+      if (autoSw) {
+        autoSw.className = 'switch-track off';
+        autoSw.setAttribute('aria-checked', 'false');
+      }
+      if (recCircle) {
+        recCircle.classList.add('active');
+        recCircle.innerHTML = '<div class="radio-dot"></div>';
+      }
+      if (autoCircle) {
+        autoCircle.classList.remove('active');
+        autoCircle.innerHTML = '';
+      }
+      optRec.classList.add('selected');
+      optRec.setAttribute('aria-checked', 'true');
+      if (optAuto) {
+        optAuto.classList.remove('selected');
+        optAuto.setAttribute('aria-checked', 'false');
+      }
+      setScope('esta_pagina');
+      if (currentState === 'inicio') renderFooterActions();
+    };
+  }
+
+  // Bind Record Clicks Switch (v11/v12: Gravação manual x Automático)
   const recSw = document.getElementById('recordClicksSwitch');
+  const autoSw = document.getElementById('autoSwitch');
+
   if (recSw) {
-    let recClicksActive = false;
     recSw.onclick = () => {
-      recClicksActive = !recClicksActive;
-      recSw.className = recClicksActive ? 'switch-track' : 'switch-track off';
-      recSw.setAttribute('aria-checked', recClicksActive ? 'true' : 'false');
+      const willBeActive = !recSw.classList.contains('switch-track') || recSw.classList.contains('off');
+      if (willBeActive) {
+        captureMethod = 'recording';
+        recSw.className = 'switch-track';
+        recSw.setAttribute('aria-checked', 'true');
+        if (autoSw) {
+          autoSw.className = 'switch-track off';
+          autoSw.setAttribute('aria-checked', 'false');
+          autoscrollOn = false;
+        }
+        setScope('esta_pagina');
+      } else {
+        captureMethod = 'automatic';
+        recSw.className = 'switch-track off';
+        recSw.setAttribute('aria-checked', 'false');
+        if (autoSw) {
+          autoSw.className = 'switch-track';
+          autoSw.setAttribute('aria-checked', 'true');
+          autoscrollOn = true;
+        }
+      }
+      if (currentState === 'inicio') renderFooterActions();
     };
     recSw.onkeydown = (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -2335,13 +3270,29 @@ export function initSidePanel() {
   }
 
   // Bind Autoscroll Switch
-  const autoSw = document.getElementById('autoSwitch');
   if (autoSw) {
-    autoSw.onclick = () => toggleAutoscroll();
+    autoSw.onclick = () => {
+      const willBeActive = !autoSw.classList.contains('switch-track') || autoSw.classList.contains('off');
+      if (willBeActive) {
+        captureMethod = 'automatic';
+        autoscrollOn = true;
+        autoSw.className = 'switch-track';
+        autoSw.setAttribute('aria-checked', 'true');
+        if (recSw) {
+          recSw.className = 'switch-track off';
+          recSw.setAttribute('aria-checked', 'false');
+        }
+      } else {
+        autoscrollOn = false;
+        autoSw.className = 'switch-track off';
+        autoSw.setAttribute('aria-checked', 'false');
+      }
+      if (currentState === 'inicio') renderFooterActions();
+    };
     autoSw.onkeydown = (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        toggleAutoscroll();
+        autoSw.click();
       }
     };
   }
@@ -2440,19 +3391,38 @@ if (typeof window !== 'undefined') {
     getSelectedModule: () => currentMode === 'zip' ? 'page-zip' : (currentMode === 'html' ? 'page-html' : 'images-zip'),
     getSelectedMode: () => currentMode,
     getSelectedScope: () => currentScope,
+    getActiveAutoscrollOptions,
+    setScrollLimitChoice,
     getLimits: () => ({ limitPages, limitMb, includeSubdomains }),
     getLastDownload: () => lastDownloadInfo,
     clearLastDownload: () => { lastDownloadInfo = null; },
+    getInMemoryArchivedFile: () => inMemoryArchivedFile,
+    setInMemoryArchivedFile: (f: typeof inMemoryArchivedFile) => { inMemoryArchivedFile = f; },
+    isStopAndSaveRequested: () => requestStopAndSaveRequested,
+    isSkipCurrentRequested: () => requestSkipCurrentRequested,
+    downloadAgain: () => downloadAgain(),
+    handleStartRecording: () => handleStartRecording(),
+    handleStopRecording: () => handleStopRecording(),
+    handleSaveRecorded: () => handleSaveRecorded(),
+    handleRestartRecording: () => handleRestartRecording(),
+    finishRecordingCapture: (res: any[]) => finishRecordingCapture(res),
+    getCaptureMethod: () => captureMethod,
+    setCaptureMethod: (m: 'automatic' | 'recording') => {
+      captureMethod = m;
+      if (currentState === 'inicio') renderFooterActions();
+    },
+    getSessionRecorder: () => sessionRecorder,
     setLoginConsentAccepted: (v: boolean) => { loginConsentAccepted = v; },
     performRealCapture: (recorder?: any) => performRealCapture(recorder),
     handlePrimaryStart: () => handlePrimaryStart(),
     setTargetTab: ({ url, title, html, tabId }: { url?: string; title?: string; html?: string; tabId?: number }) => {
       if (tabId !== undefined) currentTabId = tabId;
-      currentTabUrl = url || '';
-      currentTabTitle = title || (url ? 'Página Web' : 'Aba ativa (identificação oculta)');
+      currentTabUrl = (url && url !== 'null' && url !== 'undefined') ? url : '';
+      currentTabTitle = title || (currentTabUrl ? 'Página Web' : 'Aba ativa (identificação oculta)');
       targetTabOverrideHtml = html || '';
       try {
-        currentTabOrigin = url ? new URL(url).origin : '';
+        const orig = currentTabUrl ? new URL(currentTabUrl).origin : '';
+        currentTabOrigin = (orig && orig !== 'null') ? orig : '';
       } catch {
         currentTabOrigin = '';
       }
@@ -2460,22 +3430,22 @@ if (typeof window !== 'undefined') {
       const oTitle = document.getElementById('originTitle');
       const oUrl = document.getElementById('originUrl');
       if (oTitle) oTitle.textContent = currentTabTitle;
-      if (oUrl) oUrl.textContent = url || 'URL oculta pelo navegador · Permissão necessária';
+      if (oUrl) oUrl.textContent = currentTabUrl || 'URL oculta pelo navegador · Permissão necessária';
 
-      if (!url) {
+      if (!currentTabUrl) {
         updateSecurityPillForHiddenUrl();
         setState('sem_acesso');
         return;
       }
 
-      if (isSystemBrowserPage(url)) {
-        updateSecurityPill(url);
+      if (isSystemBrowserPage(currentTabUrl)) {
+        updateSecurityPill(currentTabUrl);
         setState('erro');
         return;
       }
 
-      updateSecurityPill(url);
-      if (!validateUrl(url, true).valid) {
+      updateSecurityPill(currentTabUrl);
+      if (!validateUrl(currentTabUrl, true).valid) {
         setState('erro');
       } else if (currentState === 'erro' || currentState === 'sem_acesso') {
         setState('inicio');

@@ -147,5 +147,24 @@ describe('Crawler BFS Fiel: Escopo de Domínio e Fila de Crawl', () => {
       expect(detected).not.toContain('192.168.1.1');
       expect(detected).not.toContain('cdn.prod.website-files.com');
     });
+
+    it('adota os padrões da SPEC-v12: máx 20 páginas, 2 níveis de sublinks e sem subdomínios', () => {
+      const session = createCrawlSession('https://meusite.com/');
+      expect(session.limits.maxPages).toBe(20);
+      expect(session.limits.maxDepth).toBe(2);
+      expect(session.limits.includeSubdomains).toBe(false);
+    });
+
+    it('suporta modo Sem limite (maxPages: Infinity)', () => {
+      const session = createCrawlSession('https://meusite.com/', { maxPages: Infinity });
+      expect(session.limits.maxPages).toBe(Infinity);
+
+      session.queuedUrls.shift(); // remove raiz
+      const manyLinks = Array.from({ length: 45 }, (_, i) => `https://meusite.com/p-${i}`);
+      enqueueDiscoveredLinks(session, manyLinks, 0);
+
+      // Todas as 45 páginas entram na fila sem corte
+      expect(session.queuedUrls.length).toBe(45);
+    });
   });
 });

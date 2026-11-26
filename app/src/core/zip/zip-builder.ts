@@ -23,6 +23,12 @@ export const DEFAULT_IMAGES_ZIP_LIMITS: ZipLimits = {
   maxPerFileBytes: 25 * 1024 * 1024 // 25 MB
 };
 
+export const DEFAULT_MEDIA_ZIP_LIMITS: ZipLimits = {
+  maxFiles: 200,
+  maxTotalBytes: 500 * 1024 * 1024, // 500 MB
+  maxPerFileBytes: 50 * 1024 * 1024 // 50 MB (SPEC-v12)
+};
+
 export interface ZipBuildResult {
   data: Uint8Array;
   fileCount: number;

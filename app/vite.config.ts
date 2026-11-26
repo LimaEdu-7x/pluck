@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 export default defineConfig({
   root: '.',
+  base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -31,6 +32,19 @@ export default defineConfig({
         const manifestSrc = resolve(__dirname, 'manifest.json');
         const manifestDst = resolve(__dirname, 'dist/manifest.json');
         fs.copyFileSync(manifestSrc, manifestDst);
+
+        // Copia licenças das fontes abertas para o dist
+        const fontLicenses = [
+          'LICENSE-SpecialElite.txt',
+          'OFL-Archivo.txt',
+          'OFL-Geist.txt'
+        ];
+        for (const lic of fontLicenses) {
+          const src = resolve(__dirname, 'src/fonts', lic);
+          if (fs.existsSync(src)) {
+            fs.copyFileSync(src, resolve(__dirname, 'dist', lic));
+          }
+        }
       }
     }
   ]

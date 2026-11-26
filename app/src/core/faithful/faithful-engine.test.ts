@@ -280,4 +280,62 @@ describe('Faithful Engine: Extração e Download de Recursos Estáticos Ausentes
       '_external/lando.itsoffbrand.io/gl/textures/head/webp/diffuse.webp'
     );
   });
+
+  it('extrai e baixa thumbnails do YouTube dentro de Web Components / Shadow DOM declarativo', async () => {
+    const mockJpgBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]); // JPEG magic bytes
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('i.ytimg.com') || url.includes('ggpht.com')) {
+        return {
+          ok: true,
+          status: 200,
+          url,
+          headers: new Headers({ 'content-type': 'image/jpeg' }),
+          arrayBuffer: async () => mockJpgBytes.buffer
+        };
+      }
+      return { ok: false, status: 404 };
+    });
+
+    const ytHtml = `
+      <html>
+        <head><title>YouTube</title></head>
+        <body>
+          <ytd-app>
+            <ytd-rich-grid-renderer>
+              <ytd-rich-item-renderer>
+                <ytd-thumbnail>
+                  <yt-img-shadow>
+                    <template shadowrootmode="open">
+                      <img id="img" src="https://i.ytimg.com/vi/dQw4w9WgXcQ/hq720.jpg?sqp=-oaymwEcCNAFEJQDSFXy&rs=AOn4CL">
+                    </template>
+                  </yt-img-shadow>
+                </ytd-thumbnail>
+                <yt-formatted-string id="video-title">Rick Astley - Never Gonna Give You Up</yt-formatted-string>
+              </ytd-rich-item-renderer>
+            </ytd-rich-grid-renderer>
+          </ytd-app>
+        </body>
+      </html>
+    `;
+
+    const candidates = extractStaticAssetCandidates(ytHtml, 'https://www.youtube.com/');
+    expect(candidates).toContain('https://i.ytimg.com/vi/dQw4w9WgXcQ/hq720.jpg?sqp=-oaymwEcCNAFEJQDSFXy&rs=AOn4CL');
+
+    const urlToZipMap = new Map<string, string>();
+    const files: Record<string, Uint8Array> = {};
+
+    const dlResult = await downloadMissingStaticAssets(
+      ytHtml,
+      'https://www.youtube.com/',
+      'https://www.youtube.com/',
+      urlToZipMap,
+      files
+    );
+
+    expect(dlResult.addedCount).toBeGreaterThanOrEqual(1);
+    const mappedPath = urlToZipMap.get('https://i.ytimg.com/vi/dQw4w9WgXcQ/hq720.jpg?sqp=-oaymwEcCNAFEJQDSFXy&rs=AOn4CL');
+    expect(mappedPath).toBeDefined();
+    expect(mappedPath).toMatch(/^_external\/i\.ytimg\.com\/vi\/dQw4w9WgXcQ\/hq720(\.[a-f0-9]+)?\.jpg$/);
+    expect(files[mappedPath!]).toBeDefined();
+  });
 });

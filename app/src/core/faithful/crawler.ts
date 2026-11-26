@@ -27,11 +27,16 @@ export function createCrawlSession(
   const urlObj = new URL(startUrl);
   const cleanStartUrl = normalizeCrawlUrl(startUrl);
 
+  const maxPages =
+    limits.maxPages === Infinity || limits.maxPages === 0
+      ? Infinity
+      : (limits.maxPages !== undefined ? limits.maxPages : 20); // SPEC-v12: padrão 20 páginas
+
   const finalLimits: CrawlLimits = {
-    maxPages: limits.maxPages || 50,
+    maxPages,
     maxBytes: limits.maxBytes || 200 * 1024 * 1024, // 200 MB
-    includeSubdomains: !!limits.includeSubdomains,
-    maxDepth: limits.maxDepth !== undefined ? limits.maxDepth : 3,
+    includeSubdomains: !!limits.includeSubdomains,   // padrão false
+    maxDepth: limits.maxDepth !== undefined ? limits.maxDepth : 2, // SPEC-v12: padrão 2 níveis de sublinks
     allowedExternalDomains: limits.allowedExternalDomains ? [...limits.allowedExternalDomains] : []
   };
 
@@ -134,7 +139,7 @@ export function extractCrawlLinks(
       }
     } catch {}
   }
-  if (hrefs.length === 0) {
+  if (hrefs.length === 0 && typeof html === 'string') {
     const matches = html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["']/gi);
     for (const m of matches) {
       if (m[1]) hrefs.push(m[1]);
@@ -230,7 +235,7 @@ export async function detectLinkedExternalDomains(
       }
     } catch {}
   }
-  if (hrefs.length === 0) {
+  if (hrefs.length === 0 && typeof html === 'string') {
     const matches = html.matchAll(/<a\b[^>]*\bhref=["']([^"']+)["']/gi);
     for (const m of matches) {
       if (m[1]) hrefs.push(m[1]);
@@ -323,9 +328,9 @@ export function enqueueDiscoveredLinks(
     if (session.visitedUrls.has(link)) continue;
     if (session.queuedUrls.some((q) => q.url === link)) continue;
 
-    // Respeita o orçamento total de páginas
+    // Respeita o orçamento total de páginas (se não for Sem limite)
     const totalKnown = session.visitedUrls.size + session.queuedUrls.length;
-    if (totalKnown >= session.limits.maxPages) {
+    if (session.limits.maxPages !== Infinity && totalKnown >= session.limits.maxPages) {
       break;
     }
 
