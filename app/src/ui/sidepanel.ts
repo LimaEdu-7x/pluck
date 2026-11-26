@@ -126,13 +126,6 @@ let requestSkipCurrentRequested = false;
 let requestStopAndSaveRequested = false;
 let isCapturePaused = false;
 let isCaptureCancelled = false;
-let partialFilesRetained: Record<string, Uint8Array> = {};
-let partialStatsRetained = {
-  pages: 0,
-  assets: 0,
-  bytes: 0,
-  elapsedSeconds: 0
-};
 
 // --------------------------------------------------------------------------
 // LIMPEZA DE RECURSOS E MEMÓRIA
@@ -188,13 +181,6 @@ export function resetToInitialState() {
   sessionRecorder.reset();
 
   // 2. Limpa dados de progresso e resultado anterior (SPEC-v12: arquivo apagado ao clicar em Voltar)
-  partialFilesRetained = {};
-  partialStatsRetained = {
-    pages: 0,
-    assets: 0,
-    bytes: 0,
-    elapsedSeconds: 0
-  };
   lastDownloadInfo = null;
   inMemoryArchivedFile = null;
   requestSkipCurrentRequested = false;
@@ -617,7 +603,6 @@ export function setState(state: UiState, data?: any) {
     'rolando',
     'analisando',
     'baixando',
-    'pausado',
     'pronto',
     'erro',
     'sem_acesso',
@@ -843,20 +828,6 @@ function populateStateData(state: UiState, data?: any) {
       if (nextTitle && data.nextItem) nextTitle.textContent = data.nextItem;
       if (nextDesc && data.nextDesc) nextDesc.textContent = data.nextDesc;
     }
-  } else if (state === 'pausado') {
-    const retained = document.getElementById('pausadoRetained');
-    const pDone = document.getElementById('pausadoPagesDone');
-    const rSaved = document.getElementById('pausadoResSaved');
-    const pRem = document.getElementById('pausadoPagesRemaining');
-    const tElapsed = document.getElementById('pausadoElapsedTime');
-
-    if (retained) {
-      retained.textContent = `${partialStatsRetained.pages} páginas salvas · ${partialStatsRetained.assets} recursos salvos (${(partialStatsRetained.bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB)`;
-    }
-    if (pDone) pDone.textContent = `${partialStatsRetained.pages} página${partialStatsRetained.pages > 1 ? 's' : ''} integrada${partialStatsRetained.pages > 1 ? 's' : ''}`;
-    if (rSaved) rSaved.textContent = `${partialStatsRetained.assets} arquivos salvos`;
-    if (pRem) pRem.textContent = `${Math.max(0, limitPages - partialStatsRetained.pages)} páginas na fila`;
-    if (tElapsed) tElapsed.textContent = `${partialStatsRetained.elapsedSeconds.toFixed(1).replace('.', ',')}s decorridos (pausado)`;
   } else if (state === 'pronto') {
     if (currentMode === 'html') {
       const pName = document.getElementById('prontoHtmlFilename');
@@ -937,11 +908,11 @@ function populateStateData(state: UiState, data?: any) {
       }
 
       if (pMeta) {
-        pMeta.style.display = 'block';
         if (data?.sizeText) {
           pMeta.textContent = `Tamanho do arquivo: ${data.sizeText}`;
+          pMeta.style.display = 'block';
         } else {
-          pMeta.textContent = 'Tamanho do arquivo: pronto para abrir';
+          pMeta.style.display = 'none';
         }
       }
       if (pPages) pPages.textContent = `${data?.pages || 1} página${(data?.pages || 1) > 1 ? 's' : ''} salva${(data?.pages || 1) > 1 ? 's' : ''} (100%)`;
@@ -1256,7 +1227,7 @@ function renderFooterActions(_data?: any) {
     stopBadge.style.border = '1px solid #0B0B0C';
     stopBadge.style.padding = '2px 5px';
     stopBadge.style.borderRadius = '2px';
-    stopBadge.textContent = 'GERAR ZIP';
+    stopBadge.textContent = currentMode === 'html' ? 'GERAR HTML' : 'GERAR ZIP';
     btnStopSave.appendChild(stopBadge);
 
     btnStopSave.onclick = () => {
@@ -1298,35 +1269,6 @@ function renderFooterActions(_data?: any) {
     btnContainer.appendChild(btnSkip);
 
     footer.appendChild(btnContainer);
-  } else if (currentState === 'pausado') {
-    const dual = document.createElement('div');
-    dual.className = 'btn-dual';
-
-    const btnResume = document.createElement('button');
-    btnResume.type = 'button';
-    btnResume.className = 'btn-primary';
-    btnResume.id = 'btnResumeDownload';
-    btnResume.textContent = 'Retomar Download';
-    btnResume.onclick = () => {
-      isCapturePaused = false;
-      setState('baixando');
-    };
-
-    const btnSavePartial = document.createElement('button');
-    btnSavePartial.type = 'button';
-    btnSavePartial.className = 'btn-secondary';
-    btnSavePartial.id = 'btnSavePartial';
-    btnSavePartial.textContent = 'Salvar Parcial (ZIP)';
-    btnSavePartial.onclick = () => {
-      finishWithPartialZip();
-    };
-
-    dual.appendChild(btnResume);
-    dual.appendChild(btnSavePartial);
-
-    note.textContent = `Salvará as ${partialStatsRetained.pages} páginas processadas em pacote ZIP`;
-    footer.appendChild(dual);
-    footer.appendChild(note);
   } else if (currentState === 'pronto') {
     const btnOpen = document.createElement('button');
     btnOpen.type = 'button';
@@ -2468,13 +2410,6 @@ async function performRealCapture(
         const elapsed = formatTimer((performance.now() - startTime) / 1000);
         const estMb = ((loaded * 80) / 1024).toFixed(1).replace('.', ',');
 
-        partialStatsRetained = {
-          pages: result?.stats?.totalPages || 1,
-          assets: loaded,
-          bytes: loaded * 80 * 1024,
-          elapsedSeconds: (performance.now() - startTime) / 1000
-        };
-
         setState('baixando', {
           pct,
           loaded,
@@ -2490,7 +2425,6 @@ async function performRealCapture(
       }
     });
 
-    partialFilesRetained = result.files;
     await triggerBrowserDownload(result.blob, result.filename);
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
@@ -2532,28 +2466,6 @@ async function performRealCapture(
   }
 }
 
-// Finaliza pacote com recursos parciais em caso de pausa
-async function finishWithPartialZip() {
-  const zipModule = await import('fflate');
-  const zipBytes = zipModule.zipSync(partialFilesRetained);
-  const blob = new Blob([zipBytes], { type: 'application/zip' });
-  const filename = `${currentTabTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_parcial.zip`;
-
-  await triggerBrowserDownload(blob, filename);
-
-  setState('pronto', {
-    filename,
-    sizeText: formatBytes(blob.size),
-    pages: partialStatsRetained.pages,
-    totalAssets: partialStatsRetained.assets,
-    cssCount: 1,
-    fontsCount: 0,
-    imagesCount: Math.max(1, partialStatsRetained.assets - 2),
-    corsErrors: 0,
-    timeoutErrors: 0,
-    elapsedTime: partialStatsRetained.elapsedSeconds.toFixed(1).replace('.', ',')
-  });
-}
 
 // --------------------------------------------------------------------------
 // DISPARO SEGURO DE DOWNLOAD NO NAVEGADOR E RETENÇÃO EM MEMÓRIA (SPEC-v12)
@@ -2708,7 +2620,6 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
       }
     });
 
-    partialFilesRetained = result.files;
     await triggerBrowserDownload(result.blob, result.filename);
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');

@@ -62,6 +62,7 @@
               <span class="mode-badge recommended">PADRÃO</span>
             </div>
             <p class="mode-desc">Salva tudo: animações, estilos e fontes prontas para abrir sem internet.</p>
+            <div class="mode-note">Lê a página viva pelo Chrome DevTools Protocol; nada sai do navegador.</div>
           </div>
 
           <!-- 2. Só HTML -->
@@ -111,7 +112,7 @@
 
         <!-- 2 Formas de Captura (SPEC-v12: Automático x Gravação manual com rádio exclusivo) -->
         <div class="capture-mode-container" role="radiogroup" aria-label="Forma de captura">
-          <div class="section-label">FORMA DE CAPTURA</div>
+          <h2 class="section-label">FORMA DE CAPTURA</h2>
           
           <div class="capture-option-row selected" id="optAutoRow" tabindex="0" role="radio" aria-checked="true">
             <div class="radio-circle active" id="autoRadioCircle"><div class="radio-dot"></div></div>
@@ -139,42 +140,20 @@
             <span class="switch-track off" id="recordClicksSwitch" style="display: none;" role="switch" aria-checked="false"><span class="switch-knob"></span></span>
           </div>
         </div>
-
-        <!-- Elementos de compatibilidade mantidos ocultos para testes de escopo/limites -->
-        <div style="display: none;" aria-hidden="true">
-          <nav class="scope-tabs" role="tablist">
-            <button type="button" class="scope-tab active" id="tab-esta" role="tab" aria-selected="true">Esta página</button>
-            <button type="button" class="scope-tab" id="tab-vinc" role="tab" aria-selected="false">Páginas vinculadas</button>
-            <button type="button" class="scope-tab" id="tab-site" role="tab" aria-selected="false">Site inteiro</button>
-          </nav>
-          <p class="scope-subtitle" id="scopeSub"></p>
-          <span class="autoscroll-dot" id="autoDot"></span>
-          <div class="card limits-card" id="limitsBox">
-            <div id="pagsChips"></div>
-            <div id="mbChips"></div>
-            <span id="subdomainSwitch" class="switch-track off"></span>
-          </div>
-          <div id="targetBox"></div>
-          <div id="externalDomainsBox"><div id="externalDomainsList"></div></div>
-        </div>
       </section>
 
       <!-- 2. TELA OPÇÕES (v12) -->
       <section class="view-state" id="view-opcoes" aria-label="Opções de Captura">
-        <button type="button" class="btn-ghost-back" id="btnBackFromOptions" aria-label="Voltar ao início">
-          <svg class="tabler-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12l-14 0" /><path d="M11 18l-6 -6" /><path d="M11 6l-6 6" /></svg>
-          <span>Voltar ao Início</span>
-        </button>
         <div style="margin-bottom: 12px; position: relative; z-index: 2;">
           <div class="type-special badge-green" id="optionsDetectedBadge" style="margin-bottom: 3px; display: none;">+ DETECTADO NA PÁGINA</div>
-          <h2 class="title-display" id="optionsViewTitle" style="margin-bottom: 3px;">Opções de Site inteiro</h2>
+          <h1 class="title-display" id="optionsViewTitle" style="margin-bottom: 3px;">Opções de Site inteiro</h1>
           <p class="desc-text" id="optionsViewSub">Defina os limites de navegação para varrer as páginas internas.</p>
         </div>
 
         <!-- 2.1 Subview Opções de Site Inteiro -->
         <div class="options-subview active" id="subview-opcoes-site">
           <div class="card options-card">
-            <span class="options-group-title">QUANTIDADE MÁXIMA DE PÁGINAS</span>
+            <h2 class="options-group-title">QUANTIDADE MÁXIMA DE PÁGINAS</h2>
             <div class="chips-selector" id="sitePagesChips" role="radiogroup" aria-label="Quantidade máxima de páginas">
               <button type="button" class="chip-option" data-val="10" role="radio" aria-checked="false">10 pág</button>
               <button type="button" class="chip-option active" data-val="20" role="radio" aria-checked="true">20 pág</button>
@@ -184,7 +163,7 @@
           </div>
 
           <div class="card options-card">
-            <span class="options-group-title">PROFUNDIDADE DE LINKS</span>
+            <h2 class="options-group-title">PROFUNDIDADE DE LINKS</h2>
             <div class="chips-selector" id="siteDepthChips" role="radiogroup" aria-label="Profundidade de links">
               <button type="button" class="chip-option" data-val="1" role="radio" aria-checked="false">1 nível</button>
               <button type="button" class="chip-option active" data-val="2" role="radio" aria-checked="true">2 níveis</button>
@@ -206,7 +185,7 @@
         <!-- 2.2 Subview Opções de Mídias -->
         <div class="options-subview" id="subview-opcoes-midias" style="display: none;">
           <div class="card options-card">
-            <span class="options-group-title">TIPOS DE MÍDIA A EXTRAIR</span>
+            <h2 class="options-group-title">TIPOS DE MÍDIA A EXTRAIR</h2>
             <div class="media-filters-list">
               <label class="media-card active" id="mediaCardImg">
                 <input type="checkbox" id="mediaCheckImg" checked class="sr-only">
@@ -259,7 +238,7 @@
           </div>
 
           <div class="card options-card">
-            <span class="options-group-title">QUANTIDADE MÁXIMA</span>
+            <h2 class="options-group-title">QUANTIDADE MÁXIMA</h2>
             <div class="chips-selector" id="mediaCountChips" role="radiogroup" aria-label="Quantidade máxima de mídias">
               <button type="button" class="chip-option" data-val="50" role="radio" aria-checked="false" tabindex="-1">50</button>
               <button type="button" class="chip-option" data-val="100" role="radio" aria-checked="false" tabindex="-1">100</button>
@@ -269,7 +248,7 @@
           </div>
 
           <div class="card options-card">
-            <span class="options-group-title">TAMANHO MÁXIMO POR ARQUIVO</span>
+            <h2 class="options-group-title">TAMANHO MÁXIMO POR ARQUIVO</h2>
             <div class="chips-selector" id="mediaSizeChips" role="radiogroup" aria-label="Tamanho máximo por arquivo">
               <button type="button" class="chip-option" data-val="10" role="radio" aria-checked="false" tabindex="-1">10 MB</button>
               <button type="button" class="chip-option" data-val="25" role="radio" aria-checked="false" tabindex="-1">25 MB</button>
@@ -329,7 +308,7 @@
       <!-- 3. TELA PROGRESSO / BAIXANDO (v12) -->
       <section class="view-state" id="view-baixando" aria-label="Progresso da Captura">
         <div class="progress-hero">
-          <span class="progress-pct-huge" id="downPct">0%</span>
+          <h1 class="progress-pct-huge" id="downPct">0%</h1>
           <span class="progress-status-sub" id="downFile">Iniciando captura...</span>
         </div>
         <div id="downMilestoneAnnounce" class="sr-only" aria-live="polite"></div>
@@ -361,7 +340,7 @@
       <!-- 3b. ROLANDO VIEW (Autoscroll compatível com v12) -->
       <section class="view-state" id="view-rolando" aria-label="Rolagem automática da página">
         <div class="progress-hero">
-          <span class="progress-pct-huge" id="scrollPct">0%</span>
+          <h1 class="progress-pct-huge" id="scrollPct">0%</h1>
           <span class="progress-status-sub" id="scrollStepNote">Rolando página para carregar conteúdo...</span>
         </div>
 
@@ -388,7 +367,7 @@
       <!-- 3c. ANALISANDO VIEW (Compatível com v12) -->
       <section class="view-state" id="view-analisando" aria-label="Análise e mapeamento">
         <div class="progress-hero">
-          <span class="progress-pct-huge" style="font-size: 28px;">Varrendo</span>
+          <h1 class="progress-pct-huge" style="font-size: 28px;">Varrendo</h1>
           <span class="progress-status-sub" id="analisandoSummary">Mapeando páginas e recursos...</span>
         </div>
         <div class="card metrics-card-v12">
@@ -399,24 +378,6 @@
           <div class="metrics-row-v12">
             <span class="m-lbl">Recursos encontrados:</span>
             <span class="m-val" id="analisandoResCount">0 recursos</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- 3d. PAUSADO VIEW -->
-      <section class="view-state" id="view-pausado" aria-label="Captura pausada">
-        <div class="progress-hero">
-          <span class="progress-pct-huge" style="font-size: 28px;">Pausado</span>
-          <span class="progress-status-sub" id="pausadoRetained">Progresso retido na memória</span>
-        </div>
-        <div class="card metrics-card-v12">
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Páginas prontas:</span>
-            <span class="m-val" id="pausadoPagesDone">1 página</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Recursos salvos:</span>
-            <span class="m-val" id="pausadoResSaved">0 arquivos</span>
           </div>
         </div>
       </section>
@@ -443,7 +404,7 @@
           <div class="type-special" style="font-size: 36px; font-weight: 700; color: #FFFFFF; line-height: 1;" id="gravandoTimer">
             00:00
           </div>
-          <div style="font-size: 12.5px; color: #A2A19D; margin-top: 8px;" id="gravandoInteracoes">
+          <div style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;" id="gravandoInteracoes">
             Interações e cliques capturados ao vivo
           </div>
           <span id="gravandoTitle" style="display: none;"></span>
@@ -451,7 +412,7 @@
         </div>
 
         <div style="padding: 9px 12px; border-radius: 3px; background: #18191E; border: 1px solid rgba(242, 241, 238, 0.14); position: relative; z-index: 2; margin-bottom: 10px;">
-          <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.35;">
+          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.35;">
             <strong style="color: #FFF;">Importante:</strong> A gravação funciona apenas dentro de <span class="type-special" style="color: #FFF;" id="gravandoScopeDomain">esta página</span>. Se trocar de endereço ou aba, a gravação será interrompida.
           </div>
         </div>
@@ -474,12 +435,12 @@
           </div>
           <div id="gravacaoErroPreservadaBox" style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px; display: none;">
             <div class="type-special" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Gravação preservada:</div>
-            <div style="font-family: var(--font-body); font-size: 12.5px; color: var(--text-primary); margin-top: 1px;" id="gravacaoErroPreservada">
+            <div style="font-family: var(--font-body); font-size: 13px; color: var(--text-primary); margin-top: 1px;" id="gravacaoErroPreservada">
             </div>
           </div>
         </div>
 
-        <div class="desc-text" style="font-size: 12.5px; margin-bottom: 10px; position: relative; z-index: 2;" id="gravacaoErroSub">
+        <div class="desc-text" style="font-size: 13px; margin-bottom: 10px; position: relative; z-index: 2;" id="gravacaoErroSub">
           Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.
         </div>
       </section>
@@ -502,44 +463,15 @@
             <span class="type-special" style="font-size: 11px; color: var(--text-muted);" id="prontoZipBadge">CÓPIA FIEL</span>
           </div>
           
-          <div style="font-size: 12.5px; color: #A2A19D; line-height: 1.35; margin-bottom: 8px;" id="prontoZipExpl">
+          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.35; margin-bottom: 8px;" id="prontoZipExpl">
             Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.
           </div>
 
           <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
-            <div style="font-size: 12px; color: #F2F1EE; line-height: 1.3;">
+            <div style="font-size: 13px; color: var(--text-primary); line-height: 1.35;">
               <strong style="color: #FFF;">Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
             </div>
-            <div class="type-special" id="prontoZipMeta" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-              Tamanho do arquivo: calculando...
-            </div>
-          </div>
-        </div>
-
-        <div class="card metrics-card-v12" style="display: none;">
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Páginas salvas:</span>
-            <span class="m-val" id="prontoZipPages">1 página (100%)</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Folhas de estilo CSS:</span>
-            <span class="m-val" id="prontoZipCss">0 arquivos</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Fontes tipográficas:</span>
-            <span class="m-val" id="prontoZipFonts">0 arquivos</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Imagens e vetores:</span>
-            <span class="m-val" id="prontoZipImages">0 arquivos</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Tempo decorrido:</span>
-            <span class="m-val" id="prontoZipTime">0,0s</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span id="prontoZipCors">Nenhum</span>
-            <span id="prontoZipTimeout">Nenhum</span>
+            <div class="type-special" id="prontoZipMeta" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: none;"></div>
           </div>
         </div>
       </section>
@@ -561,46 +493,23 @@
             <span class="type-special" style="font-size: 11px; color: #3ECF8E;" id="prontoHtmlBadge">ARQUIVO ÚNICO</span>
           </div>
           
-          <div style="font-size: 12.5px; color: #A2A19D; line-height: 1.35; margin-bottom: 8px;" id="prontoHtmlExpl">
+          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.35; margin-bottom: 8px;" id="prontoHtmlExpl">
             Abre com dois cliques em qualquer navegador. As imagens são carregadas do site original, então precisa de internet.
           </div>
 
           <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
-            <div style="font-size: 12px; color: #F2F1EE; line-height: 1.3;">
+            <div style="font-size: 13px; color: var(--text-primary); line-height: 1.35;">
               <strong style="color: #FFF;">Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
             </div>
           </div>
-          <span id="prontoHtmlMeta" style="display: none;">0 KB · Sem dependências</span>
-        </div>
-
-        <div class="card metrics-card-v12" style="display: none;">
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Documento principal:</span>
-            <span class="m-val" id="prontoHtmlDoc">1 arquivo .html</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Estilos embutidos:</span>
-            <span class="m-val" id="prontoHtmlStyles">0 folhas inline</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Imagens e fontes:</span>
-            <span class="m-val" id="prontoHtmlAssets">0 recursos</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Recursos omitidos:</span>
-            <span class="m-val" id="prontoHtmlOmitted">Nenhum</span>
-          </div>
-          <div class="metrics-row-v12">
-            <span class="m-lbl">Tempo total:</span>
-            <span class="m-val" id="prontoHtmlTime">0,0s</span>
-          </div>
+          <span id="prontoHtmlMeta" style="display: none;"></span>
         </div>
       </section>
 
       <!-- 6. ERRO VIEW -->
       <section class="view-state" id="view-erro" aria-label="Página incompatível">
         <div class="state-header">
-          <h2 class="origin-hero-title" id="erroTitle" style="color: var(--status-danger, #EF4444); font-size: 19px;">Página incompatível</h2>
+          <h1 class="origin-hero-title" id="erroTitle" style="color: var(--status-danger, #EF4444); font-size: 19px;">Página incompatível</h1>
           <span class="desc-text" id="erroSub">Navegadores bloqueiam extensões em abas internas</span>
         </div>
         <div class="card" style="border-color: var(--status-danger, #EF4444); padding: 12px 14px;">
@@ -611,7 +520,7 @@
       <!-- 7. SEM ACESSO VIEW -->
       <section class="view-state" id="view-sem-acesso" aria-label="Sem acesso à aba">
         <div class="state-header">
-          <h2 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Identificação da aba oculta</h2>
+          <h1 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Identificação da aba oculta</h1>
           <span class="desc-text" id="semAcessoDetail">Conceda permissão no navegador para identificar esta aba</span>
         </div>
       </section>
@@ -619,7 +528,7 @@
       <!-- 8. PERMISSÃO VIEW -->
       <section class="view-state" id="view-permissao" aria-label="Permissão necessária">
         <div class="state-header">
-          <h2 class="origin-hero-title" style="font-size: 19px;">Permissão de Domínio</h2>
+          <h1 class="origin-hero-title" style="font-size: 19px;">Permissão de Domínio</h1>
           <span class="desc-text" id="permScopeText">Rotas sob este domínio</span>
         </div>
         <div class="card" style="padding: 12px 14px;">
@@ -630,7 +539,7 @@
       <!-- 9. LOGIN VIEW -->
       <section class="view-state" id="view-login" aria-label="Página com login">
         <div class="state-header">
-          <h2 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Área com login</h2>
+          <h1 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Área com login</h1>
           <span class="desc-text">Campos de senha e credenciais são descartados automaticamente</span>
         </div>
         <div class="card" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px;">
