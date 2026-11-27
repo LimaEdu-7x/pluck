@@ -1317,8 +1317,8 @@ function createTablerRotate(): SVGSVGElement {
 function createTablerSquare(): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', 'tabler-icon');
-  svg.setAttribute('width', '15');
-  svg.setAttribute('height', '15');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('stroke-width', '2');
   svg.setAttribute('stroke', 'currentColor');
@@ -1419,26 +1419,16 @@ function renderFooterActions(_data?: any) {
     }
   } else if (currentState === 'rolando' || currentState === 'analisando' || currentState === 'baixando') {
     const btnContainer = document.createElement('div');
-    btnContainer.style.display = 'flex';
-    btnContainer.style.flexDirection = 'column';
-    btnContainer.style.gap = '8px';
-    btnContainer.style.width = '100%';
+    btnContainer.className = 'footer-stack';
 
     // 1. Botão "Parar e salvar o que já baixou" (com badge GERAR ZIP)
     const btnStopSave = document.createElement('button');
     btnStopSave.type = 'button';
-    btnStopSave.className = 'btn-primary';
+    btnStopSave.className = 'btn-primary btn-stop';
     btnStopSave.id = 'btnStopAndSave';
-    btnStopSave.style.background = '#FFFFFF';
-    btnStopSave.style.color = '#0B0B0C';
-    btnStopSave.style.display = 'flex';
-    btnStopSave.style.justifyContent = 'space-between';
-    btnStopSave.style.alignItems = 'center';
 
-    const stopLeft = document.createElement('div');
-    stopLeft.style.display = 'flex';
-    stopLeft.style.alignItems = 'center';
-    stopLeft.style.gap = '8px';
+    const stopLeft = document.createElement('span');
+    stopLeft.className = 'btn-stop-main';
     stopLeft.appendChild(createTablerSquare());
     const stopTxt = document.createElement('span');
     stopTxt.textContent = 'Parar e salvar o que já baixou';
@@ -1446,10 +1436,7 @@ function renderFooterActions(_data?: any) {
     btnStopSave.appendChild(stopLeft);
 
     const stopBadge = document.createElement('span');
-    stopBadge.className = 'type-special';
-    stopBadge.style.border = '1px solid #0B0B0C';
-    stopBadge.style.padding = '2px 5px';
-    stopBadge.style.borderRadius = '2px';
+    stopBadge.className = 'btn-stop-stamp';
     stopBadge.textContent = currentMode === 'html' ? 'GERAR HTML' : 'GERAR ZIP';
     btnStopSave.appendChild(stopBadge);
 
@@ -1463,10 +1450,6 @@ function renderFooterActions(_data?: any) {
     btnSkip.type = 'button';
     btnSkip.className = 'btn-secondary';
     btnSkip.id = currentState === 'rolando' ? 'btnSkipScroll' : 'btnSkipCurrent';
-    btnSkip.style.display = 'flex';
-    btnSkip.style.alignItems = 'center';
-    btnSkip.style.justifyContent = 'center';
-    btnSkip.style.gap = '8px';
 
     btnSkip.appendChild(createTablerPlayerSkipForward());
 
@@ -3466,7 +3449,7 @@ export function initSidePanel() {
   // [BUG 2] Fonte única de versão: lê manifest.json da extensão
   const brandTag = document.getElementById('brandTag');
   if (brandTag) {
-    let ver = '0.3.0';
+    let ver = '0.4.0';
     if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
       try {
         ver = chrome.runtime.getManifest()?.version || ver;

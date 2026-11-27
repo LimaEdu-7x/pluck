@@ -536,7 +536,6 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-muted);
   border: 1px solid var(--border-divider);
   border-radius: 3px;
-  padding: 1px 5px;
   white-space: nowrap;
   letter-spacing: 0.04em;
 }
@@ -552,7 +551,6 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-primary);
   font-family: var(--font-special);
   font-size: 11px;
-  padding: 2px 7px;
   border-radius: 3px;
   cursor: pointer;
   letter-spacing: 0.04em;
@@ -685,8 +683,20 @@ input[type="checkbox"]:focus-visible {
   font-family: var(--font-special);
   font-size: 11px;
   border-radius: 3px;
-  padding: 1px 5px;
   letter-spacing: 0.04em;
+}
+
+/* SELO (Stamp): um só desenho para PADRÃO, RECOMENDADO, OPÇÕES → e afins.
+   line-height 1 + 1px a mais em cima: os acentos das maiúsculas (Ã, Ú, Ç) não encostam na borda */
+.badge,
+.mode-badge,
+.mode-badge.action-badge {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  padding: 4px 6px 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .options-detected-badge {
@@ -1062,7 +1072,9 @@ input[type="checkbox"]:focus-visible {
 
 .progress-pct-huge {
   font-family: var(--font-special);
-  font-size: 38px;
+  /* cabe "100% CONCLUÍDO" em uma linha de 300px a 560px */
+  font-size: clamp(24px, 8.5vw, 38px);
+  white-space: nowrap;
   font-weight: 400;
   color: var(--text-primary);
   line-height: 1;
@@ -1117,10 +1129,28 @@ input[type="checkbox"]:focus-visible {
   font-family: var(--font-body);
 }
 
+/* dado com palavras ("58 de 58 arquivos"): Geist com algarismos tabulares; a Special Elite fica só nos selos (o "1" dela parece "l") */
 .m-val {
   color: var(--text-primary);
-  font-family: var(--font-special);
-  font-weight: 400;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.metrics-row-v12 {
+  gap: 12px;
+  line-height: 1.35;
+  align-items: baseline;
+}
+
+/* o valor nunca parte no meio; quem quebra é o rótulo */
+.m-val {
+  white-space: nowrap;
+}
+
+.m-lbl {
+  min-width: 0;
 }
 
 /* FOOTER ACTIONS DOCK (Garantia de botão na dobra 720px) */
@@ -1398,4 +1428,49 @@ input[type="checkbox"]:focus-visible {
 .consent-card label {
   color: var(--text-primary);
   cursor: pointer;
+}
+
+/* rodapé durante a captura: Parar e salvar + Pular */
+.footer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.btn-primary.btn-stop {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 16px;
+  text-align: left;
+}
+
+.btn-stop-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.btn-stop-main svg {
+  flex-shrink: 0;
+}
+
+/* em painel estreito quebra em duas linhas equilibradas, sem palavra órfã */
+.btn-stop-main span {
+  text-wrap: balance;
+}
+
+.btn-stop-stamp {
+  font-family: var(--font-special);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 4px 6px 3px;
+  border: 1px solid rgba(11, 11, 12, 0.35);
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
