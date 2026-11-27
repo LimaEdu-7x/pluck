@@ -20,7 +20,7 @@ describe('SPEC-v12 Partes 5 a 7: Gravação na Página Atual, Baixar Novamente e
     (globalThis as any).chrome = {
       runtime: {
         id: 'pluck-test-ext',
-        getManifest: () => ({ version: '0.5.0' }),
+        getManifest: () => ({ version: '0.1.0' }),
         sendMessage: vi.fn()
       },
       tabs: {
@@ -79,21 +79,20 @@ describe('SPEC-v12 Partes 5 a 7: Gravação na Página Atual, Baixar Novamente e
       expect(fullHtml).not.toContain('Pegar só um pedaço');
     });
 
-    it('a interface possui exatamente os 4 modos oficiais da SPEC-v12', () => {
+    it('a edição Pagefold tem 3 modos e não oferece Site inteiro', () => {
       const modeZip = document.getElementById('mode-zip');
       const modeHtml = document.getElementById('mode-html');
       const modeImages = document.getElementById('mode-images');
-      const modeSite = document.getElementById('mode-site');
 
-      expect(modeZip).not.toBeNull();
-      expect(modeHtml).not.toBeNull();
-      expect(modeImages).not.toBeNull();
-      expect(modeSite).not.toBeNull();
-
-      expect(modeZip?.textContent).toContain('Esta página (cópia fiel)');
+      expect(modeZip?.textContent).toContain('Esta página');
+      expect(modeZip?.textContent).not.toContain('DevTools');
       expect(modeHtml?.textContent).toContain('Só HTML');
-      expect(modeImages?.textContent).toContain('Somente mídias');
-      expect(modeSite?.textContent).toContain('Site inteiro');
+      expect(modeImages?.textContent).toContain('Somente imagens');
+      expect(document.getElementById('mode-site')).toBeNull();
+      expect(document.getElementById('btnConfigSite')).toBeNull();
+      // vídeo e áudio ficam só na edição completa
+      expect(document.getElementById('mediaCheckVid')).toBeNull();
+      expect(document.getElementById('mediaCheckAud')).toBeNull();
     });
 
     it('ao clicar em Só HTML, seleciona o modo html e atualiza o botão de ação', () => {
@@ -104,7 +103,7 @@ describe('SPEC-v12 Partes 5 a 7: Gravação na Página Atual, Baixar Novamente e
       expect(modeHtml.classList.contains('selected')).toBe(true);
 
       const mainBtn = document.getElementById('btnMainAction');
-      expect(mainBtn?.textContent).toContain('Baixar HTML Autossuficiente');
+      expect(mainBtn?.textContent).toContain('Baixar HTML');
     });
   });
 
@@ -112,35 +111,10 @@ describe('SPEC-v12 Partes 5 a 7: Gravação na Página Atual, Baixar Novamente e
   // PARTE 5: GRAVAÇÃO SÓ DA PÁGINA ATUAL
   // ==========================================================================
   describe('Parte 5: Gravação manual sob a página atual com bloqueio e erro ao navegar', () => {
-    it('alterna mutuamente entre Automático e Gravação manual', () => {
-      const autoSw = document.getElementById('autoSwitch') as HTMLElement;
-      const recSw = document.getElementById('recordClicksSwitch') as HTMLElement;
-
-      expect(autoSw.classList.contains('switch-track')).toBe(true);
-      expect(autoSw.classList.contains('off')).toBe(false);
-      expect(recSw.classList.contains('off')).toBe(true);
-      expect((window as any).__pluck.getCaptureMethod()).toBe('automatic');
-
-      // Usuário liga a Gravação Manual
-      recSw.click();
-
-      expect(recSw.classList.contains('off')).toBe(false);
-      expect(recSw.getAttribute('aria-checked')).toBe('true');
-      expect(autoSw.classList.contains('off')).toBe(true);
-      expect(autoSw.getAttribute('aria-checked')).toBe('false');
-      expect((window as any).__pluck.getCaptureMethod()).toBe('recording');
-
-      // O botão principal vira "Iniciar gravação manual"
-      const mainBtn = document.getElementById('btnMainAction');
-      expect(mainBtn?.textContent).toContain('Iniciar gravação manual');
-
-      // Usuário religa Automático: desliga gravação
-      autoSw.click();
-
-      expect(autoSw.classList.contains('off')).toBe(false);
-      expect(autoSw.getAttribute('aria-checked')).toBe('true');
-      expect(recSw.classList.contains('off')).toBe(true);
-      expect(recSw.getAttribute('aria-checked')).toBe('false');
+    it('a edição Pagefold só oferece a captura Automática', () => {
+      expect(document.getElementById('optAutoRow')).not.toBeNull();
+      expect(document.getElementById('optRecRow')).toBeNull();
+      expect(document.getElementById('recordClicksSwitch')).toBeNull();
       expect((window as any).__pluck.getCaptureMethod()).toBe('automatic');
     });
 

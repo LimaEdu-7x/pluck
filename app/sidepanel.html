@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pluck — Painel Lateral</title>
+  <title>Pagefold — Painel Lateral</title>
   <link rel="stylesheet" href="./src/ui/style.css">
 </head>
 <body>
-  <div class="side-panel-app" id="sidePanelRoot" role="region" aria-label="Pluck Painel Lateral">
+  <div class="side-panel-app" id="sidePanelRoot" role="region" aria-label="Pagefold Painel Lateral">
     
     <!-- TOP HEADER v12: Ícone + Nome Pluck + versão esmaecida + Chip com bolinha centralizada -->
     <header class="panel-header" id="panelHeader">
@@ -16,8 +16,8 @@
           <path fill-rule="evenodd" d="M80 44H152L212 104V176A36 36 0 0 1 176 212H80A36 36 0 0 1 44 176V80A36 36 0 0 1 80 44Z M84 82h26a13 13 0 0 1 13 13v70a13 13 0 0 1-13 13H97a13 13 0 0 1-13-13zM150 78a34 34 0 1 1 0 68a34 34 0 1 1 0-68zM150 98a14 14 0 1 0 0 28a14 14 0 1 0 0-28z"/>
           <path d="M170 30H214A12 12 0 0 1 226 42V86A12 12 0 0 1 206 94L162 50A12 12 0 0 1 170 30Z"/>
         </svg>
-        <span class="brand-name">Pluck</span>
-        <span class="brand-ver" id="brandTag">v0.5</span>
+        <span class="brand-name">Pagefold</span>
+        <span class="brand-ver" id="brandTag">v0.1</span>
       </div>
 
       <div class="site-chip" id="headerDomainPill" role="status" aria-label="Status da aba ativa">
@@ -57,12 +57,12 @@
             <div class="mode-header">
               <div class="mode-left">
                 <span class="mode-radio"></span>
-                <span class="mode-title">Esta página (cópia fiel)</span>
+                <span class="mode-title">Esta página</span>
               </div>
               <span class="mode-badge recommended">PADRÃO</span>
             </div>
-            <p class="mode-desc">Salva tudo: animações, estilos e fontes prontas para abrir sem internet.</p>
-            <div class="mode-note">Lê a página viva pelo Chrome DevTools Protocol; nada sai do navegador.</div>
+            <p class="mode-desc">Salva a página com estilos, fontes e imagens num ZIP para abrir sem internet.</p>
+            <div class="mode-note">Tudo acontece no seu navegador; nada vai para servidores.</div>
           </div>
 
           <!-- 2. Só HTML -->
@@ -77,32 +77,18 @@
             <p class="mode-desc">Um arquivo .html leve. Imagens e vídeos continuam no site, então precisa de internet.</p>
           </div>
 
-          <!-- 3. Site inteiro -->
-          <div class="mode-card-wrapper">
-            <div class="card interactive mode-card" id="mode-site" role="radio" aria-checked="false" tabindex="-1">
-              <div class="mode-header">
-                <div class="mode-left">
-                  <span class="mode-radio"></span>
-                  <span class="mode-title">Site inteiro</span>
-                </div>
-              </div>
-              <p class="mode-desc">Segue links internos do site (padrão: até 20 páginas em 2 níveis).</p>
-            </div>
-            <button type="button" class="mode-badge action-badge" id="btnConfigSite" aria-label="Opções do site inteiro">OPÇÕES →</button>
-          </div>
-
           <!-- 4. Somente mídias -->
           <div class="mode-card-wrapper">
             <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="-1">
               <div class="mode-header">
                 <div class="mode-left">
                   <span class="mode-radio"></span>
-                  <span class="mode-title">Somente mídias</span>
+                  <span class="mode-title">Somente imagens</span>
                 </div>
               </div>
-              <p class="mode-desc">Imagens, vídeos, áudios e vetores SVG em pastas separadas.</p>
+              <p class="mode-desc">Imagens e vetores SVG em pastas separadas.</p>
             </div>
-            <button type="button" class="mode-badge action-badge" id="btnConfigMidias" aria-label="Filtros de mídias">FILTROS →</button>
+            <button type="button" class="mode-badge action-badge" id="btnConfigMidias" aria-label="Filtros de imagens">FILTROS →</button>
           </div>
 
           <div id="webglNotice" class="webgl-notice" role="status" style="display: none;">
@@ -119,27 +105,15 @@
             <div class="option-content">
               <div class="option-header">
                 <span class="act-title">Automático</span>
-                <span class="badge badge-subtle">RECOMENDADO</span>
               </div>
               <p class="desc-text">Recarrega e rola a página sozinho para carregar todo o conteúdo.</p>
             </div>
             <span class="switch-track" id="autoSwitch" style="display: none;" role="switch" aria-checked="true"><span class="switch-knob"></span></span>
           </div>
 
-          <div class="divider"></div>
-
-          <div class="capture-option-row" id="optRecRow" tabindex="-1" role="radio" aria-checked="false">
-            <div class="radio-circle" id="recRadioCircle"></div>
-            <div class="option-content">
-              <div class="option-header">
-                <span class="act-title">Gravação manual</span>
-                <span class="badge badge-subtle">INTERATIVO</span>
-              </div>
-              <p class="desc-text">Você clica e rola na página; o Pluck salva tudo o que aparecer até você parar.</p>
-            </div>
-            <span class="switch-track off" id="recordClicksSwitch" style="display: none;" role="switch" aria-checked="false"><span class="switch-knob"></span></span>
-          </div>
         </div>
+
+        <p class="edition-note">Precisa de cópia fiel com animações, do site inteiro ou de vídeos? <a href="https://github.com/LimaEdu-7x/pluck" target="_blank" rel="noopener noreferrer">Use o Pluck, a edição completa e de código aberto</a>.</p>
       </section>
 
       <!-- 2. TELA OPÇÕES (v12) -->
@@ -147,7 +121,7 @@
         <div class="state-head">
           <div class="badge badge-subtle options-detected-badge" id="optionsDetectedBadge">+ DETECTADO NA PÁGINA</div>
           <h1 class="title-display" id="optionsViewTitle">Opções de Site inteiro</h1>
-          <p class="desc-text" id="optionsViewSub">Defina até onde o Pluck segue os links internos do site.</p>
+          <p class="desc-text" id="optionsViewSub">Defina até onde o Pagefold segue os links internos do site.</p>
         </div>
 
         <!-- 2.1 Subview Opções de Site Inteiro -->
@@ -211,29 +185,6 @@
                 <span class="folder-tag">/VETORES</span>
               </label>
 
-              <label class="media-card active" id="mediaCardVid">
-                <input type="checkbox" id="mediaCheckVid" checked class="sr-only">
-                <div class="media-info">
-                  <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
-                  <div>
-                    <div class="act-title">Vídeos</div>
-                    <div class="media-sub">MP4, WebM (sem DRM)</div>
-                  </div>
-                </div>
-                <span class="folder-tag">/VIDEOS</span>
-              </label>
-
-              <label class="media-card active" id="mediaCardAud">
-                <input type="checkbox" id="mediaCheckAud" checked class="sr-only">
-                <div class="media-info">
-                  <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
-                  <div>
-                    <div class="act-title">Áudios</div>
-                    <div class="media-sub">MP3, WAV, OGG, M4A</div>
-                  </div>
-                </div>
-                <span class="folder-tag">/AUDIOS</span>
-              </label>
             </div>
           </div>
 
@@ -451,7 +402,7 @@
         <div class="panel-card is-result">
           <div class="card-head">
             <span class="act-title" id="prontoZipFilename">site.zip</span>
-            <span class="badge badge-subtle" id="prontoZipBadge">CÓPIA FIEL</span>
+            <span class="badge badge-subtle" id="prontoZipBadge">CÓPIA OFFLINE</span>
           </div>
           <div class="ficha-stamp" id="prontoZipStamp"></div>
           <div class="card-text" id="prontoZipExpl">Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.</div>
@@ -504,7 +455,7 @@
       <section class="view-state" id="view-sem-acesso" aria-label="Sem acesso à aba">
         <div class="state-header">
           <h1 class="origin-hero-title is-warn">Endereço da aba oculto</h1>
-          <span class="desc-text" id="semAcessoDetail">O navegador não informou o endereço desta aba ao Pluck.</span>
+          <span class="desc-text" id="semAcessoDetail">O navegador não informou o endereço desta aba ao Pagefold.</span>
         </div>
       </section>
 
@@ -515,7 +466,7 @@
           <span class="desc-text" id="permScopeText">Para o modo Site inteiro</span>
         </div>
         <div class="panel-card">
-          <p class="card-text">Para seguir os links internos de <strong id="permDomain">este domínio</strong>, o navegador precisa liberar o acesso do Pluck a ele. Nada sai do seu navegador.</p>
+          <p class="card-text">Para seguir os links internos de <strong id="permDomain">este domínio</strong>, o navegador precisa liberar o acesso do Pagefold a ele. Nada sai do seu navegador.</p>
         </div>
       </section>
 
@@ -523,7 +474,7 @@
       <section class="view-state" id="view-login" aria-label="Página com login">
         <div class="state-header">
           <h1 class="origin-hero-title is-warn">Área com login</h1>
-          <span class="desc-text">O Pluck apaga senhas e dados de formulário antes de salvar.</span>
+          <span class="desc-text">O Pagefold apaga senhas e dados de formulário antes de salvar.</span>
         </div>
         <div class="card consent-card">
           <input type="checkbox" id="consentCheck" checked>

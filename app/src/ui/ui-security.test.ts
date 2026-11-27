@@ -59,12 +59,12 @@ describe('UI Security & Sanitization (Defesa contra DOM-XSS / Injeção HTML)', 
 });
 
 describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela', () => {
-  it('manifest.json declara Content Security Policy (CSP) explícita e permissão debugger em permissions', () => {
+  it('manifest.json (Pagefold) declara CSP explícita, sem debugger e com acesso a sites só opcional', () => {
     const manifestPath = path.resolve(__dirname, '../../manifest.json');
     const raw = fs.readFileSync(manifestPath, 'utf-8');
     const manifest = JSON.parse(raw);
 
-    expect(manifest.version).toBe('0.5.0');
+    expect(manifest.version).toBe('0.1.0');
     expect(manifest.content_security_policy).toBeDefined();
     expect(manifest.content_security_policy.extension_pages).toBeDefined();
 
@@ -73,9 +73,12 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'none'");
 
-    // [BUG 3] Em MV3, debugger deve estar em permissions (não pode ser optional_permissions)
-    expect(manifest.permissions).toContain('debugger');
+    // Pagefold (Chrome Web Store): sem debugger e sem acesso fixo a todos os sites
+    expect(manifest.permissions).not.toContain('debugger');
     expect(manifest.optional_permissions || []).not.toContain('debugger');
+    expect(manifest.host_permissions || []).toEqual([]);
+    expect(manifest.optional_host_permissions).toContain('*://*/*');
+    expect(manifest.minimum_chrome_version).toBe('114');
 
     // [REGRESSÃO CHROME REAL] Permissão 'tabs' obrigatória para ler URL no painel lateral
     expect(manifest.permissions).toContain('tabs');

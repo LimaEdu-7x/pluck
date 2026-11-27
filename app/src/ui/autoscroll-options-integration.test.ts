@@ -19,7 +19,7 @@ describe('Integração de Opções de Rolagem Infinita (UI -> Motor)', () => {
     (globalThis as any).chrome = {
       runtime: {
         id: 'pluck-test-ext',
-        getManifest: () => ({ version: '0.5.0' }),
+        getManifest: () => ({ version: '0.1.0' }),
         sendMessage: vi.fn()
       },
       tabs: {

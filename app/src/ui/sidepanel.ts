@@ -758,8 +758,8 @@ export function setState(state: UiState, data?: any) {
     }
     if (subEl) {
       subEl.textContent = sub === 'site'
-        ? 'Defina até onde o Pluck segue os links internos do site.'
-        : (sub === 'midias' ? 'Escolha os tipos de arquivo e os limites do ZIP.' : 'Esta página carrega itens novos conforme você rola. Até onde o Pluck deve rolar?');
+        ? 'Defina até onde o Pagefold segue os links internos do site.'
+        : (sub === 'midias' ? 'Escolha os tipos de arquivo e os limites do ZIP.' : 'Esta página carrega itens novos conforme você rola. Até onde o Pagefold deve rolar?');
     }
     const siteSubSw = document.getElementById('siteSubdomainsSwitch');
     if (siteSubSw) {
@@ -779,8 +779,8 @@ export function setState(state: UiState, data?: any) {
     const semDet = document.getElementById('semAcessoDetail');
     if (semDet) {
       semDet.textContent = currentTabTitle
-        ? `O navegador não informou o endereço de "${currentTabTitle}" ao Pluck.`
-        : 'O Pluck precisa da permissão de abas (tabs) para ler o endereço desta aba.';
+        ? `O navegador não informou o endereço de "${currentTabTitle}" ao Pagefold.`
+        : 'O Pagefold precisa da permissão de abas (tabs) para ler o endereço desta aba.';
     }
   } else if (state === 'erro') {
     lastErrorData = data;
@@ -1040,13 +1040,13 @@ function populateStateData(state: UiState, data?: any) {
         if (pSuper) pSuper.textContent = 'ARQUIVAMENTO CONCLUÍDO';
         if (pTitle) pTitle.textContent = 'Site arquivado!';
         if (pDesc) pDesc.textContent = 'O arquivo ZIP do site está pronto para navegação offline.';
-        if (pBadge) pBadge.textContent = 'CÓPIA FIEL';
+        if (pBadge) pBadge.textContent = 'CÓPIA OFFLINE';
         if (pExpl) pExpl.textContent = 'Descompacte o ZIP e abra index.html em qualquer navegador para navegar pelo site.';
       } else {
         if (pSuper) pSuper.textContent = 'ARQUIVAMENTO CONCLUÍDO';
         if (pTitle) pTitle.textContent = 'Página arquivada!';
         if (pDesc) pDesc.textContent = 'O arquivo ZIP foi gerado e está pronto para uso offline.';
-        if (pBadge) pBadge.textContent = 'CÓPIA FIEL';
+        if (pBadge) pBadge.textContent = 'CÓPIA OFFLINE';
         if (pExpl) pExpl.textContent = 'Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.';
       }
 
@@ -1388,7 +1388,9 @@ function renderFooterActions(_data?: any) {
       isCapturing = true;
       btn.disabled = true;
       btn.classList.add('disabled');
-      fn();
+      // Pagefold: o acesso aos sites é opcional e é pedido aqui, dentro do clique (o navegador exige um gesto do usuário).
+      // Se o usuário negar, a captura segue; o que vier de outros domínios e falhar entra na contagem de recursos bloqueados.
+      void requestSiteAccess().finally(() => fn());
     };
 
     const label = document.createElement('span');
@@ -1396,10 +1398,10 @@ function renderFooterActions(_data?: any) {
       label.textContent = 'Iniciar gravação manual';
       btn.onclick = () => triggerStart(() => handleStartRecording());
     } else if (currentMode === 'html') {
-      label.textContent = 'Baixar HTML Autossuficiente';
+      label.textContent = 'Baixar HTML';
       btn.onclick = () => triggerStart(() => handlePrimaryStart());
     } else if (currentMode === 'images') {
-      label.textContent = 'Baixar Galeria de Mídias';
+      label.textContent = 'Baixar somente imagens';
       btn.onclick = () => triggerStart(() => handlePrimaryStart());
     } else {
       label.textContent = 'Começar a arquivar';
@@ -3200,6 +3202,15 @@ async function triggerBrowserDownload(blob: Blob, filename: string): Promise<voi
 // --------------------------------------------------------------------------
 // PERMISSÕES OPCIONAIS (CRAWLER & HOST)
 // --------------------------------------------------------------------------
+async function requestSiteAccess(): Promise<boolean> {
+  if (typeof chrome === 'undefined' || !chrome.permissions?.request) return true;
+  try {
+    return await chrome.permissions.request({ origins: ['*://*/*'] });
+  } catch {
+    return false;
+  }
+}
+
 async function checkHostPermission(url: string): Promise<boolean> {
   if (typeof chrome === 'undefined' || !chrome.permissions) return true;
   try {
@@ -3449,7 +3460,7 @@ export function initSidePanel() {
   // [BUG 2] Fonte única de versão: lê manifest.json da extensão
   const brandTag = document.getElementById('brandTag');
   if (brandTag) {
-    let ver = '0.5.0';
+    let ver = '0.1.0';
     if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
       try {
         ver = chrome.runtime.getManifest()?.version || ver;
