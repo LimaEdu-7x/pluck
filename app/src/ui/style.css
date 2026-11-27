@@ -183,6 +183,37 @@ input[type="checkbox"]:focus-visible {
   border-color: rgba(239, 68, 68, 0.5);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 65%;
+  flex-shrink: 1;
+}
+
+.btn-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.btn-github:hover,
+.btn-github:focus-visible {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
 .site-domain {
   white-space: nowrap;
   overflow: hidden;
