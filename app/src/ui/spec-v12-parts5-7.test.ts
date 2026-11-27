@@ -20,7 +20,7 @@ describe('SPEC-v12 Partes 5 a 7: Gravação na Página Atual, Baixar Novamente e
     (globalThis as any).chrome = {
       runtime: {
         id: 'pluck-test-ext',
-        getManifest: () => ({ version: '0.4.0' }),
+        getManifest: () => ({ version: '0.5.0' }),
         sendMessage: vi.fn()
       },
       tabs: {

@@ -19,7 +19,7 @@ describe('Correções de TDZ (ReferenceError) e Teclado (Switch Space/Enter)', (
     (globalThis as any).chrome = {
       runtime: {
         id: 'pluck-test-ext',
-        getManifest: () => ({ version: '0.4.0' }),
+        getManifest: () => ({ version: '0.5.0' }),
         sendMessage: vi.fn()
       },
       tabs: {
