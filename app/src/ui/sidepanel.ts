@@ -3460,7 +3460,7 @@ export function initSidePanel() {
   // [BUG 2] Fonte única de versão: lê manifest.json da extensão
   const brandTag = document.getElementById('brandTag');
   if (brandTag) {
-    let ver = '0.1.0';
+    let ver = '0.2.0';
     if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
       try {
         ver = chrome.runtime.getManifest()?.version || ver;

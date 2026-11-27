@@ -22,3 +22,9 @@ scratch/
 
 app/tests/screenshots/
 app/tests/clone-proof/
+
+# documentos internos de design e produto: ficam só no computador
+DESIGN.md
+PRODUCT.md
+branding/
+.impeccable/
