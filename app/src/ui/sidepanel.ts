@@ -308,29 +308,24 @@ export function checkPageAccessibility(url?: string | null, title?: string | nul
 
   switch (kind) {
     case 'loja':
+    case 'sistema':
+    case 'vazio':
       return {
         accessible: false,
-        reason: 'Loja de extensões não permite captura',
-        shortLabel: 'Loja de extensões não permite captura'
+        reason: 'Esta página não pode ser capturada porque é protegida pelo navegador.',
+        shortLabel: 'Página protegida'
       };
     case 'arquivo_local':
       return {
         accessible: false,
-        reason: 'Arquivo local',
+        reason: 'Esta página não pode ser capturada porque arquivos locais não são acessíveis diretamente.',
         shortLabel: 'Arquivo local'
       };
     case 'pdf':
       return {
         accessible: false,
-        reason: 'PDF não suportado',
+        reason: 'Arquivos PDF não podem ser capturados pelo Pluck.',
         shortLabel: 'PDF não suportado'
-      };
-    case 'sistema':
-    case 'vazio':
-      return {
-        accessible: false,
-        reason: 'Página protegida do navegador',
-        shortLabel: 'Página protegida do navegador'
       };
     case 'ok':
       return { accessible: true };
@@ -349,7 +344,7 @@ export function formatDisplayDomain(urlOrOrigin?: string | null): string {
   }
   const access = checkPageAccessibility(urlOrOrigin, currentTabTitle);
   if (!access.accessible) {
-    return access.reason!;
+    return access.shortLabel || 'Página protegida';
   }
   try {
     const parsed = new URL(urlOrOrigin);
@@ -371,13 +366,24 @@ export function updateSecurityPillForHiddenUrl() {
   const dText = document.getElementById('domainText');
   const badge = document.getElementById('securityBadge');
 
-  if (pill) pill.className = 'site-chip domain-pill warn';
+  const shortText = 'Sem acesso';
+  const fullText = 'O navegador não informou o endereço desta aba ao Pluck.';
+
+  if (pill) {
+    pill.className = 'site-chip domain-pill warn';
+    pill.title = fullText;
+    pill.setAttribute('aria-label', `${shortText}: ${fullText}`);
+  }
   if (dot) dot.className = 'status-dot dot-core-amber warn';
   if (ring) ring.className = 'ring-spin-amber';
-  if (dText) dText.textContent = 'Sem acesso';
+  if (dText) {
+    dText.textContent = shortText;
+    dText.title = fullText;
+  }
   if (badge) {
     badge.className = 'security-badge warn';
-    badge.textContent = 'Acesso Restrito';
+    badge.textContent = shortText;
+    badge.title = fullText;
   }
 }
 
@@ -402,10 +408,16 @@ function updateSecurityPill(url: string, tabStatus?: string) {
     pill.className = 'site-chip domain-pill error';
     dot.className = 'status-dot dot-core-red err';
     if (ring) ring.className = 'ring-static-red';
-    dText.textContent = access.reason!;
+    const shortText = access.shortLabel || 'Página protegida';
+    const fullText = access.reason || 'Esta página não pode ser capturada porque é protegida pelo navegador.';
+    dText.textContent = shortText;
+    dText.title = fullText;
+    pill.title = fullText;
+    pill.setAttribute('aria-label', `${shortText}: ${fullText}`);
     if (badge) {
       badge.className = 'security-badge muted';
-      badge.textContent = access.reason!;
+      badge.textContent = shortText;
+      badge.title = fullText;
     }
     if (popStatus) {
       popStatus.replaceChildren();
@@ -429,9 +441,13 @@ function updateSecurityPill(url: string, tabStatus?: string) {
     dot.className = 'status-dot dot-core-red err';
     if (ring) ring.className = 'ring-static-red';
     dText.textContent = 'Sem página';
+    dText.title = 'Nenhuma página ativa detectada.';
+    pill.title = 'Nenhuma página ativa detectada.';
+    pill.setAttribute('aria-label', 'Sem página: Nenhuma página ativa detectada.');
     if (badge) {
       badge.className = 'security-badge muted';
       badge.textContent = 'Sem página';
+      badge.title = 'Nenhuma página ativa detectada.';
     }
     if (popStatus) {
       popStatus.replaceChildren();
@@ -449,6 +465,9 @@ function updateSecurityPill(url: string, tabStatus?: string) {
   try {
     const cleanHost = formatDisplayDomain(url);
     dText.textContent = cleanHost;
+    dText.title = `Conectado a ${cleanHost}`;
+    pill.title = `Conectado a ${cleanHost}`;
+    pill.setAttribute('aria-label', `Conectado a ${cleanHost}`);
 
     if (savePath) {
       savePath.textContent = `Downloads / ${cleanHost !== 'Sem página' ? cleanHost : 'site'}.zip`;
@@ -458,9 +477,16 @@ function updateSecurityPill(url: string, tabStatus?: string) {
       pill.className = 'site-chip domain-pill error';
       dot.className = 'status-dot dot-core-red err';
       if (ring) ring.className = 'ring-static-red';
+      const shortText = 'Página protegida';
+      const fullText = 'Esta página não pode ser capturada porque é protegida pelo navegador.';
+      dText.textContent = shortText;
+      dText.title = fullText;
+      pill.title = fullText;
+      pill.setAttribute('aria-label', `${shortText}: ${fullText}`);
       if (badge) {
         badge.className = 'security-badge muted';
-        badge.textContent = 'Sistema';
+        badge.textContent = shortText;
+        badge.title = fullText;
       }
       if (popStatus) {
         popStatus.replaceChildren();
@@ -835,14 +861,24 @@ export function setState(state: UiState, data?: any) {
   } else {
     const access = checkPageAccessibility(currentTabUrl, currentTabTitle);
     if (!access.accessible) {
-      if (pill) pill.className = 'site-chip domain-pill error';
+      const shortText = access.shortLabel || 'Página protegida';
+      const fullText = access.reason || 'Esta página não pode ser capturada porque é protegida pelo navegador.';
+      if (pill) {
+        pill.className = 'site-chip domain-pill error';
+        pill.title = fullText;
+        pill.setAttribute('aria-label', `${shortText}: ${fullText}`);
+      }
       if (dot) dot.className = 'status-dot dot-core-red err';
       const ring = document.getElementById('domainRing');
       if (ring) ring.className = 'ring-static-red';
-      if (dText) dText.textContent = access.reason!;
+      if (dText) {
+        dText.textContent = shortText;
+        dText.title = fullText;
+      }
       if (badge) {
         badge.className = 'security-badge muted';
-        badge.textContent = access.reason!;
+        badge.textContent = shortText;
+        badge.title = fullText;
       }
     } else {
       const domainSource = (state === 'pronto' || state === 'baixando' || state === 'rolando' || state === 'analisando') && (lockedCaptureOrigin || lockedCaptureUrl)

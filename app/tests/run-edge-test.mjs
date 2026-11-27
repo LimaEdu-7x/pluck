@@ -426,7 +426,7 @@ async function runV4FinalSandboxTest() {
     // Salva print explícito da aba HTTP compatível com a pílula do host (getartcraft-like)
     await panelPage.screenshot({ path: path.join(screenshotsDir, 'A-painel-escuro-compativel-host.png') });
 
-    // [REGRESSÃO CHROME REAL] Teste 2: Distinção estrita dos 3 Estados exigidos pelo Edu
+    // [REGRESSÃO CHROME REAL] Teste 2: Distinção estrita dos 3 Estados exigidos
     console.log('[REGRESSÃO CHROME REAL] Validando distinção dos 3 estados: Sistema, Sem Acesso e Compatível...');
 
     // ESTADO 2: Página de sistema (chrome://extensions)
