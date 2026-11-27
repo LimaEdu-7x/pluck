@@ -245,5 +245,10 @@ export function serializeLiveDom(
     return parts.join('\n');
   }
 
-  return serializeNode(targetRoot);
+  // Documento vivo: carimba a origem real (só a origem) para o motor recusar DOM lido de outro site
+  const stamp =
+    root === undefined || root === null
+      ? `<!--pluck-source-origin:${typeof location !== 'undefined' ? location.origin : ''}-->`
+      : '';
+  return serializeNode(targetRoot) + stamp;
 }

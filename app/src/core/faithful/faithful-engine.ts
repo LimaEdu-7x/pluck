@@ -1,8 +1,9 @@
 // Orquestrador do Motor de Captura Fiel (CDP + Autoscroll + Reescrita + ZIP)
 
 import { zipSync } from 'fflate';
-import { FaithfulCaptureOptions, FaithfulCaptureResult, CapturedResource } from './types';
-import { CdpNetworkRecorder, sanitizeUrlForStorage, MAX_CDP_RESOURCES, MAX_CDP_BYTES } from './cdp-recorder';
+import { FaithfulCaptureOptions, FaithfulCaptureResult, CapturedResource, FaithfulCaptureWarnings } from './types';
+import { watchTargetTab } from './tab-guard';
+import { CdpNetworkRecorder, isDebuggerDetachedError, sanitizeUrlForStorage, MAX_CDP_RESOURCES, MAX_CDP_BYTES } from './cdp-recorder';
 import { performAutoscroll } from './autoscroll';
 import {
   mapUrlToZipPath,
@@ -39,11 +40,28 @@ export async function captureFaithfulSite(
   let brokenImagesCount = 0;
   let externalAssetsCount = 0;
   let pagesCount = 0;
+  let failedPages = 0;
+  let attemptedSubpages = 0;
+  let networkLost = false;
+  let mainStatus: number | undefined;
+  const ownGuard = !options.tabGuard && tabId !== undefined && typeof chrome !== 'undefined' && !!chrome.tabs;
+  const guard = options.tabGuard || (ownGuard ? watchTargetTab(tabId!, pageUrl) : null);
+  // Debugger que cai porque a aba fechou vira captura parcial, não erro
+  const detachIsInterruption = (err: unknown): boolean => {
+    if (!isDebuggerDetachedError(err)) return false;
+    if (err.reason === 'target_closed') guard?.interrupt('tab_closed');
+    return Boolean(guard?.reason);
+  };
 
   try {
     // 1. Inicializa o Gravador CDP se houver tabId
     if (options.recorder) {
-      recorder = options.recorder;
+      try {
+        options.recorder.throwIfDetached();
+        recorder = options.recorder;
+      } catch (err) {
+        if (!detachIsInterruption(err)) throw err;
+      }
     } else if (tabId && typeof chrome !== 'undefined' && chrome.debugger) {
       recorder = new CdpNetworkRecorder(tabId);
       try {
@@ -54,8 +72,12 @@ export async function captureFaithfulSite(
       }
     }
 
+    guard?.onInterrupted((r) => {
+      if (r === 'navigated_away') recorder?.freeze(guard.interruptedAt);
+    });
+
     // 2. Executa autoscroll se habilitado
-    if (autoscrollEnabled) {
+    if (autoscrollEnabled && !guard?.reason) {
       if (options.onProgress) {
         options.onProgress(0, 100, 'Executando autoscroll e ativando animações...');
       }
@@ -77,7 +99,9 @@ export async function captureFaithfulSite(
           if (recorder) {
             try {
               await recorder.evaluate(`(${performAutoscroll.toString()})(${JSON.stringify(scrollOpts)})`);
-            } catch {}
+            } catch (err) {
+              if (!detachIsInterruption(err) && isDebuggerDetachedError(err)) throw err;
+            }
           }
         }
       }
@@ -88,13 +112,13 @@ export async function captureFaithfulSite(
 
     // Se temos tabId e scripting, captura o DOM vivo após o autoscroll para preservar
     // Shadow DOM Declarativo (<template shadowrootmode="open">), imagens resolvidas e nós hidratados
-    if (tabId && typeof chrome !== 'undefined' && chrome.scripting) {
+    if (tabId && !guard?.reason && typeof chrome !== 'undefined' && chrome.scripting) {
       try {
         const results = await chrome.scripting.executeScript({
           target: { tabId },
           func: serializeLiveDom
         });
-        if (results && results[0]?.result && isValidDocumentHtml(results[0].result)) {
+        if (!guard?.reason && results && results[0]?.result && isValidDocumentHtml(results[0].result)) {
           mainHtml = results[0].result;
         }
       } catch (err) {
@@ -102,14 +126,24 @@ export async function captureFaithfulSite(
       }
     }
 
-    if ((!mainHtml || isSpaSkeleton(mainHtml) || !mainHtml.includes('shadowrootmode=')) && recorder) {
+    if ((!mainHtml || isSpaSkeleton(mainHtml) || !mainHtml.includes('shadowrootmode=')) && recorder && !guard?.reason) {
       try {
         const cdpHtml = await recorder.evaluate(`(${serializeLiveDom.toString()})()`);
-        if (cdpHtml && isValidDocumentHtml(cdpHtml)) mainHtml = cdpHtml;
+        if (!guard?.reason && cdpHtml && isValidDocumentHtml(cdpHtml)) mainHtml = cdpHtml;
       } catch (err) {
+        if (!detachIsInterruption(err) && isDebuggerDetachedError(err)) throw err;
         console.warn('CDP evaluate serializeLiveDom falhou no faithful-engine:', err);
       }
     }
+
+    // HTML carimbado com outra origem = DOM lido depois que a aba saiu do site: descarta e busca o original
+    const htmlOrigin = stampedSourceOrigin(mainHtml);
+    if (htmlOrigin && htmlOrigin !== new URL(pageUrl).origin) {
+      guard?.interrupt('navigated_away');
+      recorder?.freeze(guard?.interruptedAt);
+      mainHtml = await fetchOriginalHtml(pageUrl);
+    }
+    mainHtml = mainHtml.replace(SOURCE_STAMP_RE, '');
 
     if (!isValidDocumentHtml(mainHtml)) {
       throw new Error(`Falha crítica no Modo Fiel: DOM da página principal vazio ou inacessível (${pageUrl}).`);
@@ -121,15 +155,22 @@ export async function captureFaithfulSite(
       capturedResources.push(...options.customResources);
     }
     if (recorder) {
+      mainStatus = recorder.getDocumentStatus(pageUrl);
+    }
+    if (recorder && guard?.reason !== 'tab_closed') {
       if (options.onProgress) {
         options.onProgress(50, 100, 'Coletando recursos de rede via CDP...');
       }
-      const cdpResources = await recorder.collectResources((loaded, total, item) => {
-        if (options.onProgress) {
-          options.onProgress(loaded, total, item);
-        }
-      });
-      capturedResources.push(...cdpResources);
+      try {
+        const cdpResources = await recorder.collectResources((loaded, total, item) => {
+          if (options.onProgress) {
+            options.onProgress(loaded, total, item);
+          }
+        });
+        capturedResources.push(...cdpResources);
+      } catch (err) {
+        if (!detachIsInterruption(err)) throw err;
+      }
     }
 
     // 5. Mapeia todos os recursos capturados para caminhos dentro do ZIP
@@ -154,8 +195,9 @@ export async function captureFaithfulSite(
     pagesCount = 1;
 
     // 5.1 Baixa estaticamente qualquer recurso declarado no HTML (menu, hover, srcset, masks, imagens CDN)
-    // que não tenha sido acionado pelo browser durante o autoscroll do CDP
-    const staticDownloads = await downloadMissingStaticAssets(
+    // que não tenha sido acionado pelo browser durante o autoscroll do CDP.
+    // Captura interrompida (aba fechou/saiu do site) não busca mais nada na rede: devolve o parcial já.
+    const staticDownloads = guard?.reason ? { addedBytes: 0, externalCount: 0 } : await downloadMissingStaticAssets(
       mainHtml,
       pageUrl,
       pageUrl,
@@ -172,6 +214,7 @@ export async function captureFaithfulSite(
 
     // 5.2 Baixa fontes ou imagens declaradas em CSS capturados pelo CDP que não foram requisitadas
     for (const res of capturedResources) {
+      if (guard?.reason) break;
       if ((res.mimeType.includes('css') || res.url.endsWith('.css')) && typeof res.data === 'string') {
         const cssDownloads = await downloadMissingStaticAssets(
           res.data,
@@ -210,6 +253,7 @@ export async function captureFaithfulSite(
 
     const seenJsUrls = new Set<string>();
     for (const jsItem of jsSources) {
+      if (guard?.reason) break;
       if (seenJsUrls.has(jsItem.url)) continue;
       seenJsUrls.add(jsItem.url);
 
@@ -236,10 +280,13 @@ export async function captureFaithfulSite(
       enqueueDiscoveredLinks(crawlSession, initialLinks, 0);
 
       const isRootLocal = isLocalhostPage(pageUrl);
+      // Interrupção cancela a subpágina em andamento; teto de 20 s para nenhum fetch ficar pendurado
+      const crawlAbort = new AbortController();
+      guard?.onInterrupted(() => crawlAbort.abort());
 
       while (crawlSession.queuedUrls.length > 0 && !crawlSession.isFinished) {
         // Checa parada geral solicitada pelo usuário ("Parar e salvar")
-        if ((options.shouldStop && options.shouldStop()) || options.signal?.aborted) {
+        if ((options.shouldStop && options.shouldStop()) || options.signal?.aborted || guard?.reason) {
           crawlSession.isFinished = true;
           break;
         }
@@ -266,10 +313,13 @@ export async function captureFaithfulSite(
 
         urlToZipMap.set(next.url, subPageZip);
         pagesCount++;
+        // A raiz volta à fila do crawler, mas já foi capturada da aba: não entra nos avisos
+        const isRootRefetch = next.url === crawlSession.rootUrl;
+        if (!isRootRefetch) attemptedSubpages++;
 
         let actualSubPageZip = subPageZip;
         try {
-          const res = await fetch(next.url);
+          const res = await fetch(next.url, { signal: AbortSignal.any([crawlAbort.signal, AbortSignal.timeout(20000)]) });
           // [FIEL-03] Valida destino final após redirecionamento e verifica se está no escopo de crawl
           if (res.url) {
             const destCheck = validateUrl(res.url, isRootLocal);
@@ -301,8 +351,10 @@ export async function captureFaithfulSite(
             }
           }
 
+          if (!res.ok && !isRootRefetch) failedPages++;
           if (res.ok) {
             const subHtml = await res.text();
+            if (guard?.reason) break; // saiu da origem/fechou durante o download: não salva a página
             recordDownloadedBytes(crawlSession, subHtml.length);
             const subLinks = extractCrawlLinks(subHtml, res.url || next.url, crawlSession);
             enqueueDiscoveredLinks(crawlSession, subLinks, next.depth);
@@ -337,7 +389,10 @@ export async function captureFaithfulSite(
             totalBytes += encodedSub.byteLength;
           }
         } catch {
-          // Ignora subpágina inacessível
+          if (guard?.reason) break; // fetch cancelado pela interrupção: não é falha de página
+          // Subpágina inacessível: conta como falha; offline no navegador = a rede caiu
+          if (!isRootRefetch) failedPages++;
+          if (typeof navigator !== 'undefined' && navigator.onLine === false) networkLost = true;
         }
       }
     }
@@ -472,10 +527,19 @@ export async function captureFaithfulSite(
     files['abrir.ps1'] = new TextEncoder().encode(generateAbrirPs1());
     files['abrir.sh'] = new TextEncoder().encode(generateAbrirSh());
 
-    // 10. Gera o arquivo ZIP final
+    // 10. Gera o arquivo ZIP final (nunca entrega ZIP de captura cuja depuração caiu no meio)
+    if (!guard?.reason) recorder?.throwIfDetached();
     const zipData = zipSync(files, { level: 6 });
     const blob = new Blob([zipData], { type: 'application/zip' });
     const cleanName = safePath(pageTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'));
+
+    const warnings: FaithfulCaptureWarnings = {};
+    if (mainStatus !== undefined && mainStatus >= 400) warnings.mainStatus = mainStatus;
+    if (failedPages > 0 || networkLost) {
+      warnings.failedPages = failedPages;
+      warnings.totalPages = 1 + attemptedSubpages;
+    }
+    if (networkLost) warnings.networkLost = true;
 
     return {
       filename: `${cleanName || 'site'}-fiel.zip`,
@@ -487,13 +551,34 @@ export async function captureFaithfulSite(
         brokenImages: brokenImagesCount,
         externalAssets: externalAssetsCount
       },
-      files
+      files,
+      ...(guard?.reason ? { interrupted: guard.reason } : {}),
+      ...(Object.keys(warnings).length ? { warnings } : {})
     };
   } finally {
+    if (ownGuard) guard?.stop();
     if (recorder) {
       await recorder.stop().catch(() => {});
     }
   }
+}
+
+const SOURCE_STAMP_RE = /<!--pluck-source-origin:([^>]*?)-->/;
+
+function stampedSourceOrigin(html: string): string | null {
+  const m = SOURCE_STAMP_RE.exec(html || '');
+  return m ? m[1] : null;
+}
+
+// HTML original da página quando o DOM vivo já é de outro site (parcial da origem certa)
+async function fetchOriginalHtml(pageUrl: string): Promise<string> {
+  try {
+    const res = await fetch(pageUrl, { credentials: 'omit', signal: AbortSignal.timeout(10000) });
+    if (res.ok && validateUrl(res.url || pageUrl, isLocalhostPage(pageUrl)).valid && new URL(res.url || pageUrl).origin === new URL(pageUrl).origin) {
+      return await res.text();
+    }
+  } catch {}
+  return '';
 }
 
 // Extrai candidatos a recursos estáticos declarados em HTML, CSS ou atributos

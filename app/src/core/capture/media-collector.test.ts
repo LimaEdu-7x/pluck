@@ -200,3 +200,29 @@ describe('Media Collector (SPEC-v12: Modo Somente Mídias)', () => {
     expect(result.stats.savedAssets).toBe(1); // Item 1 salvo, item 2 pulado, parou no 3
   });
 });
+
+describe('E4: contagem real de mídias para o painel', () => {
+  it('página sem mídia: savedAssets = 0 e ZIP sem arquivos', async () => {
+    const doc = new DOMParser().parseFromString('<html><body><p>só texto</p></body></html>', 'text/html');
+    const candidates = collectMediaFromDom(doc, 'https://exemplo.com/');
+    expect(candidates).toHaveLength(0);
+    const res = await captureMediaZip({ candidates, title: 'Sem Midia', pageUrl: 'https://exemplo.com/' });
+    expect(res.stats.savedAssets).toBe(0);
+    expect(res.stats.totalAssets).toBe(0);
+    expect(Object.keys(unzipSync(new Uint8Array(await res.blob.arrayBuffer())))).toHaveLength(0);
+  });
+
+  it('savedAssets bate com os arquivos do ZIP quando parte das mídias falha', async () => {
+    globalThis.fetch = vi.fn(async (u: any) =>
+      String(u).includes('ok') ? new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }) : new Response('x', { status: 404 })
+    ) as any;
+    const candidates: MediaCandidate[] = [
+      { url: 'https://exemplo.com/ok.png', type: 'image', sourceKind: 'img' },
+      { url: 'https://exemplo.com/falha.png', type: 'image', sourceKind: 'img' }
+    ];
+    const res = await captureMediaZip({ candidates, pageUrl: 'https://exemplo.com/' });
+    const files = Object.keys(unzipSync(new Uint8Array(await res.blob.arrayBuffer())));
+    expect(res.stats.savedAssets).toBe(1);
+    expect(files).toHaveLength(res.stats.savedAssets);
+  });
+});

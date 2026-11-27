@@ -1251,3 +1251,61 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-muted);
   text-align: center;
 }
+
+.main-action-disabled-reason {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* ==========================================================================
+   ALTO CONTRASTE / FORCED-COLORS (G2)
+   ========================================================================== */
+@media (forced-colors: active) {
+  /* Ponto interno do rádio selecionado visível no alto contraste */
+  .card.selected .mode-radio::after,
+  .radio-circle.active .radio-dot,
+  .radio-dot,
+  .capture-option-row.selected .radio-circle .radio-dot {
+    background-color: Highlight !important;
+    border: 2px solid Highlight !important;
+    forced-color-adjust: none;
+  }
+
+  .card.selected .mode-radio,
+  .radio-circle.active,
+  .capture-option-row.selected .radio-circle {
+    border-color: Highlight !important;
+  }
+
+  /* Borda de seleção nos cards e opções selecionadas */
+  .card.interactive.selected,
+  .mode-card.selected,
+  .capture-option-row.selected {
+    border: 2px solid Highlight !important;
+  }
+
+  /* Anéis de foco e contornos com cores de sistema */
+  :focus-visible,
+  .btn-primary:focus-visible,
+  .btn-secondary:focus-visible,
+  .card:focus-visible,
+  .chip-option:focus-visible,
+  .switch-track:focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+  }
+
+  .switch-track:not(.off) {
+    border: 2px solid Highlight !important;
+  }
+
+  .switch-track:not(.off) .switch-knob {
+    background-color: Highlight !important;
+    forced-color-adjust: none;
+  }
+}
+

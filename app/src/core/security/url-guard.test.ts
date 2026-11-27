@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateUrl, isAllowedProtocol, isPrivateIpOrHost, isLocalhostPage } from './url-guard';
+import { validateUrl, isAllowedProtocol, isPrivateIpOrHost, isLocalhostPage, classifyTabAccess } from './url-guard';
 
 describe('UrlGuard', () => {
   it('permite protocolos http e https', () => {
@@ -87,5 +87,55 @@ describe('UrlGuard', () => {
     expect(isLocalhostPage('http://localhost:3000')).toBe(true);
     expect(isLocalhostPage('http://127.0.0.1')).toBe(true);
     expect(isLocalhostPage('http://[::1]:8080')).toBe(true);
+  });
+});
+
+describe('classifyTabAccess (painel: aba sem acesso antes do clique)', () => {
+  it('classifica cada tipo de aba', () => {
+    expect(classifyTabAccess('')).toBe('vazio');
+    expect(classifyTabAccess('about:blank')).toBe('vazio');
+    expect(classifyTabAccess('edge://newtab/')).toBe('vazio');
+    expect(classifyTabAccess('edge://settings/profiles')).toBe('sistema');
+    expect(classifyTabAccess('chrome://extensions')).toBe('sistema');
+    expect(classifyTabAccess('chrome-extension://abc/x.html')).toBe('sistema');
+    expect(classifyTabAccess('https://chromewebstore.google.com/detail/x')).toBe('loja');
+    expect(classifyTabAccess('https://microsoftedge.microsoft.com/addons/detail/x')).toBe('loja');
+    expect(classifyTabAccess('file:///C:/teste/local-test.html')).toBe('arquivo_local');
+    expect(classifyTabAccess('http://127.0.0.1:8080/sample.pdf')).toBe('pdf');
+    expect(classifyTabAccess('https://exemplo.com/doc', 'application/pdf')).toBe('pdf');
+    expect(classifyTabAccess('https://getartcraft.com/', 'text/html')).toBe('ok');
+  });
+});
+
+describe('classifyTabAccess: lojas por hostname e caminho (ressalva do Cofre)', () => {
+  it('reconhece a loja com e sem barra, maiúsculas, query e hash', () => {
+    for (const u of [
+      'https://chromewebstore.google.com',
+      'https://chromewebstore.google.com/',
+      'HTTPS://ChromeWebStore.Google.COM',
+      'https://chromewebstore.google.com?hl=pt-BR',
+      'https://chromewebstore.google.com/detail/x/abc?hl=pt#reviews',
+      'http://chromewebstore.google.com/',
+      'https://chrome.google.com/webstore',
+      'https://chrome.google.com/webstore/',
+      'https://CHROME.google.com/WebStore/detail/abc',
+      'https://chrome.google.com/webstore?hl=pt',
+      'https://microsoftedge.microsoft.com/addons',
+      'https://microsoftedge.microsoft.com/addons/',
+      'https://MicrosoftEdge.Microsoft.com/Addons/detail/x?hl=pt-BR',
+      'https://microsoftedge.microsoft.com/addons?hl=pt'
+    ]) expect(classifyTabAccess(u), u).toBe('loja');
+  });
+
+  it('não confunde caminhos e hosts parecidos com a loja', () => {
+    for (const u of [
+      'https://chrome.google.com/',
+      'https://chrome.google.com/webstorefake',
+      'https://microsoftedge.microsoft.com/',
+      'https://microsoftedge.microsoft.com/addonsx',
+      'https://chromewebstore.google.com.evil.com/',
+      'https://evil.com/chromewebstore.google.com/',
+      'https://evil.com/?u=https://chromewebstore.google.com/'
+    ]) expect(classifyTabAccess(u), u).toBe('ok');
   });
 });

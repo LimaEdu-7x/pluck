@@ -137,3 +137,44 @@ export function validateUrl(rawUrl: string, allowLocalhost = false): UrlValidati
     return { valid: false, reason: 'Formato de URL inválido' };
   }
 }
+
+export type TabAccessKind = 'ok' | 'vazio' | 'sistema' | 'loja' | 'arquivo_local' | 'pdf';
+
+// Lojas de extensões: o navegador bloqueia scripts nelas. Compara hostname e segmento de caminho, nunca prefixo de string.
+const STORE_PATHS: Record<string, string | null> = {
+  'chromewebstore.google.com': null, // host inteiro
+  'chrome.google.com': '/webstore',
+  'microsoftedge.microsoft.com': '/addons'
+};
+
+function isExtensionStore(u: URL): boolean {
+  if (!(u.hostname in STORE_PATHS)) return false;
+  const base = STORE_PATHS[u.hostname];
+  if (base === null) return true;
+  const path = u.pathname.toLowerCase();
+  return path === base || path.startsWith(`${base}/`);
+}
+
+/**
+ * Diz se a aba pode ser capturada antes do clique. `contentType` (document.contentType da aba)
+ * pega PDF servido sem extensão .pdf; sem ele a detecção de PDF é só pela URL.
+ */
+export function classifyTabAccess(rawUrl: string | null | undefined, contentType?: string): TabAccessKind {
+  const url = (rawUrl || '').trim();
+  const lower = url.toLowerCase();
+  if (!lower || lower === 'about:blank' || lower === 'about:newtab') return 'vazio';
+  if (/^(chrome|edge|about|chrome-extension|extension|devtools|view-source|chrome-search|edge-extension):/.test(lower)) {
+    return lower.startsWith('chrome://newtab') || lower.startsWith('edge://newtab') ? 'vazio' : 'sistema';
+  }
+  if (lower.startsWith('file:')) return 'arquivo_local';
+  if (contentType?.toLowerCase().includes('application/pdf')) return 'pdf';
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'sistema';
+    if (isExtensionStore(u)) return 'loja';
+    if (u.pathname.toLowerCase().endsWith('.pdf')) return 'pdf';
+  } catch {
+    return 'vazio';
+  }
+  return 'ok';
+}

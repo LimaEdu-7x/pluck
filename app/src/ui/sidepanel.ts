@@ -1,4 +1,4 @@
-import { validateUrl, isLocalhostPage } from '../core/security/url-guard';
+import { validateUrl, isLocalhostPage, classifyTabAccess } from '../core/security/url-guard';
 import { pageHtmlModule } from '../modules';
 import { captureFaithfulSite } from '../core/faithful/faithful-engine';
 import { isValidDocumentHtml } from '../core/capture/capture-engine';
@@ -9,6 +9,7 @@ import { SessionRecorder } from '../core/faithful/session-recorder';
 import { CapturedResource } from '../core/faithful/types';
 import type { AutoscrollOptions } from '../core/faithful/autoscroll';
 import { captureMediaZip, collectMediaFromDom, type MediaType } from '../core/capture/media-collector';
+import { watchTargetTab, type TabGuard } from '../core/faithful/tab-guard';
 
 export type UiScope = 'esta_pagina' | 'paginas_vinculadas' | 'site_inteiro';
 export type UiMode = 'zip' | 'html' | 'images';
@@ -116,6 +117,18 @@ let activeBlobUrl: string | null = null;
 let lastDownloadInfo: { filename: string; size: number; base64: string } | null = null;
 let inMemoryArchivedFile: { filename: string; blob: Blob; base64: string } | null = null;
 
+// Preserva a aba e origem travadas no início da captura ou gravação
+let lockedCaptureTabId: number | null = null;
+let lockedCaptureUrl: string | null = null;
+let lockedCaptureTitle: string | null = null;
+let lockedCaptureOrigin: string | null = null;
+
+export function getLockedCaptureZipFilename(): string {
+  const base = lockedCaptureTitle || (lockedCaptureUrl ? new URL(lockedCaptureUrl).hostname : '') || 'site';
+  const clean = base.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return `${clean || 'site'}-fiel.zip`;
+}
+
 // Domínios externos vinculados (Opção B - Confirmação Explícita)
 let detectedExternalDomains: string[] = [];
 let confirmedExternalDomains = new Set<string>();
@@ -130,6 +143,8 @@ let requestSkipCurrentRequested = false;
 let requestStopAndSaveRequested = false;
 let isCapturePaused = false;
 let isCaptureCancelled = false;
+let isCapturing = false;
+let lastErrorData: any = null;
 
 // --------------------------------------------------------------------------
 // LIMPEZA DE RECURSOS E MEMÓRIA
@@ -189,6 +204,10 @@ export function resetToInitialState() {
   inMemoryArchivedFile = null;
   requestSkipCurrentRequested = false;
   requestStopAndSaveRequested = false;
+  lockedCaptureTabId = null;
+  lockedCaptureUrl = null;
+  lockedCaptureTitle = null;
+  lockedCaptureOrigin = null;
 
   // Limpa elementos visuais de progresso e métricas no DOM
   const scrollPct = document.getElementById('scrollPct');
@@ -266,27 +285,70 @@ export function resetToInitialState() {
 
   // Permite que uma nova captura seja executada
   isCaptureCancelled = false;
+  isCapturing = false;
+  lastErrorData = null;
 }
 
 // --------------------------------------------------------------------------
 // ATUALIZAÇÃO VISUAL DE SEGURANÇA E DOMÍNIO
 // --------------------------------------------------------------------------
+export interface PageAccessibility {
+  accessible: boolean;
+  reason?: string;
+  shortLabel?: string;
+}
+
+export function checkPageAccessibility(url?: string | null, title?: string | null): PageAccessibility {
+  const isPdf = Boolean(
+    (title && title.toLowerCase().trim().endsWith('.pdf')) ||
+    (url && url.toLowerCase().includes('.pdf'))
+  );
+  const kind = classifyTabAccess(url, isPdf ? 'application/pdf' : undefined);
+
+  switch (kind) {
+    case 'loja':
+      return {
+        accessible: false,
+        reason: 'Loja de extensões não permite captura',
+        shortLabel: 'Loja de extensões não permite captura'
+      };
+    case 'arquivo_local':
+      return {
+        accessible: false,
+        reason: 'Arquivo local',
+        shortLabel: 'Arquivo local'
+      };
+    case 'pdf':
+      return {
+        accessible: false,
+        reason: 'PDF não suportado',
+        shortLabel: 'PDF não suportado'
+      };
+    case 'sistema':
+    case 'vazio':
+      return {
+        accessible: false,
+        reason: 'Página protegida do navegador',
+        shortLabel: 'Página protegida do navegador'
+      };
+    case 'ok':
+      return { accessible: true };
+  }
+}
+
 export function isSystemBrowserPage(url: string): boolean {
   if (!url) return false;
-  const lower = url.toLowerCase().trim();
-  return (
-    lower.startsWith('chrome://') ||
-    lower.startsWith('edge://') ||
-    lower.startsWith('about:') ||
-    lower.startsWith('chrome-extension://') ||
-    lower.startsWith('devtools://') ||
-    lower.startsWith('view-source:')
-  );
+  const kind = classifyTabAccess(url);
+  return kind === 'sistema' || kind === 'vazio';
 }
 
 export function formatDisplayDomain(urlOrOrigin?: string | null): string {
   if (!urlOrOrigin || urlOrOrigin === 'null' || urlOrOrigin === 'undefined' || urlOrOrigin === '—' || urlOrOrigin === 'about:blank') {
     return 'Sem página';
+  }
+  const access = checkPageAccessibility(urlOrOrigin, currentTabTitle);
+  if (!access.accessible) {
+    return access.reason!;
   }
   try {
     const parsed = new URL(urlOrOrigin);
@@ -333,6 +395,29 @@ function updateSecurityPill(url: string, tabStatus?: string) {
   if (popUrl) popUrl.textContent = url || '—';
 
   const isBusyState = currentState === 'baixando' || currentState === 'rolando' || currentState === 'analisando' || currentState === 'pronto';
+
+  const access = checkPageAccessibility(url, currentTabTitle);
+  if (!access.accessible) {
+    pill.className = 'site-chip domain-pill error';
+    dot.className = 'status-dot dot-core-red err';
+    if (ring) ring.className = 'ring-static-red';
+    dText.textContent = access.reason!;
+    if (badge) {
+      badge.className = 'security-badge muted';
+      badge.textContent = access.reason!;
+    }
+    if (popStatus) {
+      popStatus.replaceChildren();
+      const mDot = document.createElement('span');
+      mDot.className = 'mini-dot';
+      mDot.style.background = '#EF4444';
+      mDot.style.boxShadow = '0 0 6px #EF4444';
+      popStatus.appendChild(mDot);
+      popStatus.appendChild(document.createTextNode(' PÁGINA RESTRITA'));
+      popStatus.style.color = '#EF4444';
+    }
+    return;
+  }
 
   if (!url || url === 'null' || url === 'undefined') {
     if (isBusyState) {
@@ -692,6 +777,7 @@ export function setState(state: UiState, data?: any) {
         : "Permissão 'tabs' necessária no navegador";
     }
   } else if (state === 'erro') {
+    lastErrorData = data;
     if (pill) pill.className = 'site-chip domain-pill error';
     if (dot) dot.className = 'status-dot dot-core-red err';
     const ring = document.getElementById('domainRing');
@@ -731,29 +817,47 @@ export function setState(state: UiState, data?: any) {
     const ring = document.getElementById('domainRing');
     if (ring) ring.className = 'ring-pulse-red';
   } else if (state === 'gravacao_erro') {
+    lastErrorData = data;
     if (pill) pill.className = 'site-chip danger';
     if (dot) dot.className = 'status-dot dot-core-red err';
     const ring = document.getElementById('domainRing');
     if (ring) ring.className = 'ring-pulse-red';
     if (dText) {
-      if (data?.navigatedToUrl) {
-        dText.textContent = formatDisplayDomain(data.navigatedToUrl);
-      } else {
-        dText.textContent = 'outro-site.com';
-      }
+      const domainSource = lockedCaptureOrigin || lockedCaptureUrl || currentTabOrigin || currentTabUrl;
+      dText.textContent = formatDisplayDomain(domainSource);
     }
   } else {
-    const displayHost = formatDisplayDomain(currentTabOrigin || currentTabUrl);
-    const hasValidHost = displayHost !== 'Sem página';
+    const access = checkPageAccessibility(currentTabUrl, currentTabTitle);
+    if (!access.accessible) {
+      if (pill) pill.className = 'site-chip domain-pill error';
+      if (dot) dot.className = 'status-dot dot-core-red err';
+      const ring = document.getElementById('domainRing');
+      if (ring) ring.className = 'ring-static-red';
+      if (dText) dText.textContent = access.reason!;
+      if (badge) {
+        badge.className = 'security-badge muted';
+        badge.textContent = access.reason!;
+      }
+    } else {
+      const domainSource = (state === 'pronto' || state === 'baixando' || state === 'rolando' || state === 'analisando') && (lockedCaptureOrigin || lockedCaptureUrl)
+        ? (lockedCaptureOrigin || lockedCaptureUrl)
+        : (currentTabOrigin || currentTabUrl);
+      const displayHost = formatDisplayDomain(domainSource);
+      const hasValidHost = displayHost !== 'Sem página';
 
-    if (pill) pill.className = 'site-chip';
-    if (dot) dot.className = hasValidHost ? 'status-dot dot-core-green ok' : 'status-dot dot-core-red err';
-    const ring = document.getElementById('domainRing');
-    if (ring) ring.className = hasValidHost ? 'ring-pulse-green' : 'ring-static-red';
+      if (pill) pill.className = 'site-chip';
+      if (dot) dot.className = hasValidHost ? 'status-dot dot-core-green ok' : 'status-dot dot-core-red err';
+      const ring = document.getElementById('domainRing');
+      if (ring) ring.className = hasValidHost ? 'ring-pulse-green' : 'ring-static-red';
 
-    if (dText) {
-      dText.textContent = displayHost;
+      if (dText) {
+        dText.textContent = displayHost;
+      }
     }
+  }
+
+  if (state === 'pronto' || state === 'erro' || state === 'inicio') {
+    isCapturing = false;
   }
 
   renderFooterActions(data);
@@ -878,6 +982,26 @@ function populateStateData(state: UiState, data?: any) {
         }
       }
       if (pTime) pTime.textContent = `${data?.elapsedTime || '0,0'} segundos`;
+
+      const pHtmlWarn = document.getElementById('prontoHtmlWarning');
+      if (pHtmlWarn) {
+        const warningParts: string[] = [];
+        if (data?.warnings?.mainStatus && data.warnings.mainStatus >= 400) {
+          warningParts.push(`A página respondeu ${data.warnings.mainStatus}.`);
+        }
+        if (data?.warnings?.failedPages && data.warnings.totalPages) {
+          warningParts.push(`${data.warnings.failedPages} de ${data.warnings.totalPages} páginas falharam.`);
+        }
+        if (data?.warnings?.networkLost) {
+          warningParts.push('A conexão caiu durante a captura.');
+        }
+        if (warningParts.length > 0) {
+          pHtmlWarn.textContent = warningParts.join(' ');
+          pHtmlWarn.style.display = 'block';
+        } else {
+          pHtmlWarn.style.display = 'none';
+        }
+      }
     } else {
       const pName = document.getElementById('prontoZipFilename');
       const pSuper = document.getElementById('prontoZipSuper');
@@ -939,6 +1063,26 @@ function populateStateData(state: UiState, data?: any) {
         else pTimeout.className = 'metrics-val';
       }
       if (pTime) pTime.textContent = `${data?.elapsedTime || '0,0'} segundos decorridos`;
+
+      const pZipWarn = document.getElementById('prontoZipWarning');
+      if (pZipWarn) {
+        const warningParts: string[] = [];
+        if (data?.warnings?.mainStatus && data.warnings.mainStatus >= 400) {
+          warningParts.push(`A página respondeu ${data.warnings.mainStatus}.`);
+        }
+        if (data?.warnings?.failedPages && data.warnings.totalPages) {
+          warningParts.push(`${data.warnings.failedPages} de ${data.warnings.totalPages} páginas falharam.`);
+        }
+        if (data?.warnings?.networkLost) {
+          warningParts.push('A conexão caiu durante a captura.');
+        }
+        if (warningParts.length > 0) {
+          pZipWarn.textContent = warningParts.join(' ');
+          pZipWarn.style.display = 'block';
+        } else {
+          pZipWarn.style.display = 'none';
+        }
+      }
     }
   } else if (state === 'permissao') {
     const pDom = document.getElementById('permDomain');
@@ -955,7 +1099,15 @@ function populateStateData(state: UiState, data?: any) {
     const errProto = document.getElementById('erroProtocol');
     if (errTitle) errTitle.textContent = data?.errorTitle || 'Página de sistema incompatível';
     if (errSub) errSub.textContent = data?.errorDetail || 'Navegadores bloqueiam extensões em abas internas';
-    if (data?.url && errProto) errProto.textContent = `URL: ${data.url}`;
+    if (errProto) {
+      if (data?.errorDetail && (data.isDebuggerDetached || data.isEmptyMedia)) {
+        errProto.textContent = data.errorDetail;
+      } else if (data?.url) {
+        errProto.textContent = `URL: ${data.url}`;
+      } else {
+        errProto.textContent = 'Selecione uma aba com página web comum (HTTP, HTTPS, file://)';
+      }
+    }
   } else if (state === 'gravando') {
     const gTitle = document.getElementById('gravandoTitle');
     const gUrl = document.getElementById('gravandoUrl');
@@ -976,24 +1128,53 @@ function populateStateData(state: UiState, data?: any) {
       clearInterval(recordingTimerInterval);
       recordingTimerInterval = null;
     }
-    let origHost = 'getartcraft.com';
-    try {
-      if (currentTabOrigin) origHost = new URL(currentTabOrigin).hostname;
-    } catch {}
+
+    const titleEl = document.getElementById('gravacaoErroTitle');
+    const superEl = document.getElementById('gravacaoErroSuper');
     const msgEl = document.getElementById('gravacaoErroMsg');
-    if (msgEl) {
-      if (data?.errorMsg) {
-        msgEl.textContent = data.errorMsg;
-      } else {
-        msgEl.textContent = `A gravação vale só para a página onde começou. Você saiu de ${origHost} para outro endereço.`;
-      }
-    }
     const subEl = document.getElementById('gravacaoErroSub');
-    if (subEl) {
-      subEl.textContent = 'Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.';
-    }
     const presBox = document.getElementById('gravacaoErroPreservadaBox');
     const presEl = document.getElementById('gravacaoErroPreservada');
+    const presLbl = document.getElementById('gravacaoErroPreservadaLabel');
+
+    const isInterrupted = Boolean(data?.isInterrupted);
+    const reason = data?.reason;
+
+    if (isInterrupted) {
+      if (reason === 'tab_closed') {
+        if (superEl) superEl.textContent = 'ABA FECHADA';
+        if (titleEl) titleEl.textContent = 'A aba foi fechada';
+        if (msgEl) msgEl.textContent = 'A aba foi fechada durante a captura.';
+      } else {
+        if (superEl) superEl.textContent = 'SITE ALTERADO';
+        if (titleEl) titleEl.textContent = 'A aba foi para outro site';
+        if (msgEl) msgEl.textContent = 'A aba foi para outro site durante a captura.';
+      }
+      if (subEl) {
+        subEl.textContent = 'Escolha se deseja salvar o que já capturou antes de sair ou recomeçar.';
+      }
+      if (presLbl) {
+        presLbl.textContent = 'Captura preservada:';
+      }
+    } else {
+      let origHost = 'página';
+      try {
+        const u = lockedCaptureOrigin || currentTabOrigin;
+        if (u) origHost = new URL(u).hostname;
+      } catch {}
+      if (superEl) superEl.textContent = 'PÁGINA ALTERADA';
+      if (titleEl) titleEl.textContent = 'Você saiu da página';
+      if (msgEl) {
+        msgEl.textContent = data?.errorMsg || `A gravação vale só para a página onde começou. Você saiu de ${origHost} para outro endereço.`;
+      }
+      if (subEl) {
+        subEl.textContent = 'Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.';
+      }
+      if (presLbl) {
+        presLbl.textContent = 'Gravação preservada:';
+      }
+    }
+
     if (presEl && data?.retainedText) {
       presEl.textContent = data.retainedText;
       if (presBox) presBox.style.display = 'block';
@@ -1183,26 +1364,49 @@ function renderFooterActions(_data?: any) {
     btn.className = 'btn-primary';
     btn.id = 'btnMainAction';
 
+    const access = checkPageAccessibility(currentTabUrl, currentTabTitle);
+    if (!access.accessible) {
+      btn.disabled = true;
+      btn.setAttribute('aria-disabled', 'true');
+      btn.classList.add('disabled');
+    }
+
     btn.appendChild(createTablerSparkles());
+
+    const triggerStart = (fn: () => void | Promise<void>) => {
+      if (!access.accessible || isCapturing || btn.disabled) return;
+      isCapturing = true;
+      btn.disabled = true;
+      btn.classList.add('disabled');
+      fn();
+    };
 
     const label = document.createElement('span');
     if (captureMethod === 'recording') {
       label.textContent = 'Iniciar gravação manual';
-      btn.onclick = () => handleStartRecording();
+      btn.onclick = () => triggerStart(() => handleStartRecording());
     } else if (currentMode === 'html') {
       label.textContent = 'Baixar HTML Autossuficiente';
-      btn.onclick = () => handlePrimaryStart();
+      btn.onclick = () => triggerStart(() => handlePrimaryStart());
     } else if (currentMode === 'images') {
       label.textContent = 'Baixar Galeria de Mídias';
-      btn.onclick = () => handlePrimaryStart();
+      btn.onclick = () => triggerStart(() => handlePrimaryStart());
     } else {
       label.textContent = 'Começar a arquivar';
-      btn.onclick = () => handlePrimaryStart();
+      btn.onclick = () => triggerStart(() => handlePrimaryStart());
     }
 
     btn.appendChild(label);
     btn.appendChild(createTablerArrowRight());
     footer.appendChild(btn);
+
+    if (!access.accessible && access.reason) {
+      const reasonEl = document.createElement('div');
+      reasonEl.className = 'main-action-disabled-reason';
+      reasonEl.id = 'mainActionDisabledReason';
+      reasonEl.textContent = access.reason;
+      footer.appendChild(reasonEl);
+    }
   } else if (currentState === 'rolando' || currentState === 'analisando' || currentState === 'baixando') {
     const btnContainer = document.createElement('div');
     btnContainer.style.display = 'flex';
@@ -1351,13 +1555,24 @@ function renderFooterActions(_data?: any) {
     saveInner.style.gap = '8px';
     saveInner.appendChild(createTablerDownload());
     const saveTxt = document.createElement('span');
-    saveTxt.textContent = 'Salvar o que já gravei';
+    saveTxt.textContent = lastErrorData?.isInterrupted ? 'Salvar o que já capturei' : 'Salvar o que já gravei';
     saveInner.appendChild(saveTxt);
 
     btnSave.appendChild(saveInner);
     btnSave.appendChild(createTablerArrowRight());
-    btnSave.onclick = () => {
-      handleSaveRecorded();
+    btnSave.onclick = async () => {
+      if (lastErrorData?.partialBlob && lastErrorData?.partialFilename) {
+        await triggerBrowserDownload(lastErrorData.partialBlob, lastErrorData.partialFilename);
+        setState('pronto', {
+          filename: lastErrorData.partialFilename,
+          sizeText: formatBytes(lastErrorData.partialBlob.size),
+          pages: 1,
+          totalAssets: 0,
+          elapsedTime: '00:00'
+        });
+      } else {
+        handleSaveRecorded();
+      }
     };
 
     const btnRestart = document.createElement('button');
@@ -1366,7 +1581,7 @@ function renderFooterActions(_data?: any) {
     btnRestart.id = 'btnRestartRecording';
     btnRestart.appendChild(createTablerRotate());
     const restartTxt = document.createElement('span');
-    restartTxt.textContent = 'Recomeçar na página original';
+    restartTxt.textContent = lastErrorData?.isInterrupted ? 'Recomeçar' : 'Recomeçar na página original';
     btnRestart.appendChild(restartTxt);
     btnRestart.onclick = () => {
       handleRestartRecording();
@@ -1387,6 +1602,45 @@ function renderFooterActions(_data?: any) {
     footer.appendChild(btnDis);
     footer.appendChild(note);
   } else if (currentState === 'erro') {
+    if (lastErrorData?.isEmptyMedia) {
+      const btnBack = document.createElement('button');
+      btnBack.type = 'button';
+      btnBack.className = 'btn-secondary';
+      btnBack.id = 'btnBackToStart';
+      btnBack.textContent = 'Voltar';
+      btnBack.setAttribute('aria-label', 'Voltar');
+      btnBack.onclick = () => {
+        resetToInitialState();
+      };
+      footer.appendChild(btnBack);
+      return;
+    }
+
+    if (lastErrorData?.isDebuggerDetached) {
+      const btnRetry = document.createElement('button');
+      btnRetry.type = 'button';
+      btnRetry.className = 'btn-primary';
+      btnRetry.id = 'btnRetryCapture';
+      btnRetry.textContent = 'Tentar de novo';
+      btnRetry.onclick = () => {
+        handlePrimaryStart();
+      };
+
+      const btnBack = document.createElement('button');
+      btnBack.type = 'button';
+      btnBack.className = 'btn-secondary';
+      btnBack.id = 'btnBackToStart';
+      btnBack.textContent = 'Voltar';
+      btnBack.setAttribute('aria-label', 'Voltar');
+      btnBack.onclick = () => {
+        resetToInitialState();
+      };
+
+      footer.appendChild(btnRetry);
+      footer.appendChild(btnBack);
+      return;
+    }
+
     const btnDis = document.createElement('button');
     btnDis.type = 'button';
     btnDis.className = 'btn-disabled';
@@ -1804,7 +2058,14 @@ export function toggleAutoscroll() {
 // FLUXO DE EXECUÇÃO: AUTOSCROLL -> ANÁLISE -> CAPTURA
 // --------------------------------------------------------------------------
 async function handlePrimaryStart() {
+  const access = checkPageAccessibility(currentTabUrl, currentTabTitle);
+  if (!access.accessible) {
+    isCapturing = false;
+    return;
+  }
+
   if (!currentTabUrl || !validateUrl(currentTabUrl, true).valid) {
+    isCapturing = false;
     setState('erro');
     return;
   }
@@ -1844,16 +2105,52 @@ async function executeCaptureFlow() {
   isCapturePaused = false;
   isCaptureCancelled = false;
 
+  const lockedTabId = currentTabId;
+  const lockedTabUrl = currentTabUrl;
+  const lockedTabTitle = currentTabTitle;
+  const lockedTabOrigin = currentTabOrigin;
+
+  lockedCaptureTabId = lockedTabId;
+  lockedCaptureUrl = lockedTabUrl;
+  lockedCaptureOrigin = lockedTabOrigin;
+  lockedCaptureTitle = lockedTabTitle;
+
+  const tabGuard = (lockedTabId && lockedTabUrl) ? watchTargetTab(lockedTabId, lockedTabUrl) : undefined;
+  let interruptedHandled = false;
+  const triggerInterruption = (reason: 'tab_closed' | 'navigated_away') => {
+    isCaptureCancelled = true;
+    if (interruptedHandled) return;
+    interruptedHandled = true;
+    const errorMsg = reason === 'tab_closed'
+      ? 'A aba foi fechada durante a captura.'
+      : 'A aba foi para outro site durante a captura.';
+    const filename = getLockedCaptureZipFilename();
+    setState('gravacao_erro', {
+      errorMsg,
+      retainedText: '0 RECURSOS SALVOS',
+      partialFilename: filename,
+      isInterrupted: true,
+      reason
+    });
+  };
+
+  tabGuard?.onInterrupted((reason) => {
+    triggerInterruption(reason);
+  });
+
   let activeRecorder: CdpNetworkRecorder | null = null;
-  if (currentMode === 'zip' && currentTabId && typeof chrome !== 'undefined' && chrome.debugger) {
+  if (currentMode === 'zip' && lockedTabId && typeof chrome !== 'undefined' && chrome.debugger) {
     try {
-      activeRecorder = new CdpNetworkRecorder(currentTabId);
+      activeRecorder = new CdpNetworkRecorder(lockedTabId);
+      activeRecorder.onDetached(() => {
+        isCaptureCancelled = true;
+      });
       await activeRecorder.start();
 
       // Recarrega a aba sob o depurador CDP para registrar 100% dos recursos iniciais (WASM, 3D, Shaders, Webfonts)
       if (chrome.tabs && typeof chrome.tabs.reload === 'function') {
         await new Promise<void>((resolve) => {
-          chrome.tabs.reload(currentTabId!, { bypassCache: true }, () => resolve());
+          chrome.tabs.reload(lockedTabId!, { bypassCache: true }, () => resolve());
         });
         await new Promise((r) => setTimeout(r, 3500));
       }
@@ -1865,10 +2162,10 @@ async function executeCaptureFlow() {
 
   // Captura o HTML inicial limpo ANTES do autoscroll para preservar hidratação no modo ZIP (Fiel)
   let initialCleanHtml = '';
-  if (currentTabId && typeof chrome !== 'undefined' && chrome.scripting) {
+  if (lockedTabId && typeof chrome !== 'undefined' && chrome.scripting && !tabGuard?.reason) {
     try {
       const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId: currentTabId },
+        target: { tabId: lockedTabId },
         func: async () => {
           try {
             const resp = await fetch(window.location.href, { credentials: 'omit' });
@@ -1886,30 +2183,59 @@ async function executeCaptureFlow() {
     } catch {}
   }
 
+  if (tabGuard?.reason) {
+    triggerInterruption(tabGuard.reason);
+    if (activeRecorder) await activeRecorder.stop().catch(() => {});
+    if (tabGuard) tabGuard.stop();
+    return;
+  }
+
   // 1. Fase de Rolagem (se habilitada)
-  if (autoscrollOn && currentTabId) {
+  if (autoscrollOn && lockedTabId && !tabGuard?.reason && !isCaptureCancelled) {
     setState('rolando', { currentY: 0, maxY: 1000, step: 0, imagesCount: 0 });
-    await runRealAutoscrollInTab(currentTabId, getActiveAutoscrollOptions(), flowStartedAt);
+    await runRealAutoscrollInTab(lockedTabId, getActiveAutoscrollOptions(), flowStartedAt, tabGuard);
+    if (tabGuard?.reason) {
+      triggerInterruption(tabGuard.reason);
+      if (activeRecorder) await activeRecorder.stop().catch(() => {});
+      if (tabGuard) tabGuard.stop();
+      return;
+    }
     if (isCaptureCancelled) {
       if (activeRecorder) await activeRecorder.stop().catch(() => {});
+      if (tabGuard) tabGuard.stop();
       return;
     }
   }
 
+  if (tabGuard?.reason) {
+    triggerInterruption(tabGuard.reason);
+    if (activeRecorder) await activeRecorder.stop().catch(() => {});
+    if (tabGuard) tabGuard.stop();
+    return;
+  }
+
   // 2. Fase de Captura e Download
-  if (currentScope !== 'esta_pagina') {
+  if (currentScope !== 'esta_pagina' && !tabGuard?.reason && !isCaptureCancelled) {
     setState('analisando', { pages: 1, resources: 12 });
     await new Promise((r) => setTimeout(r, 600));
   }
 
-  await performRealCapture(activeRecorder, initialCleanHtml);
+  if (tabGuard?.reason) {
+    triggerInterruption(tabGuard.reason);
+    if (activeRecorder) await activeRecorder.stop().catch(() => {});
+    if (tabGuard) tabGuard.stop();
+    return;
+  }
+
+  await performRealCapture(activeRecorder, initialCleanHtml, tabGuard, lockedTabId, lockedTabUrl, lockedTabTitle);
 }
 
 // Execução de autoscroll no DOM da aba ativa com métricas reais
 async function runRealAutoscrollInTab(
   tabId: number,
   customOpts?: AutoscrollOptions,
-  startTime: number = Date.now()
+  startTime: number = Date.now(),
+  tabGuard?: TabGuard
 ): Promise<void> {
   const opts = customOpts || getActiveAutoscrollOptions();
   const step = opts.step || 400;
@@ -1957,7 +2283,13 @@ async function runRealAutoscrollInTab(
       (limitType === 'time' || currentY < docHeight) &&
       (limitType === 'time' || currentY < maxHeight)
     ) {
-      if (skipAutoscrollRequested || requestSkipCurrentRequested || requestStopAndSaveRequested || isCaptureCancelled) {
+      if (
+        skipAutoscrollRequested ||
+        requestSkipCurrentRequested ||
+        requestStopAndSaveRequested ||
+        isCaptureCancelled ||
+        tabGuard?.reason
+      ) {
         requestSkipCurrentRequested = false;
         break;
       }
@@ -2052,8 +2384,49 @@ async function runRealAutoscrollInTab(
 // Execução real da captura com os motores correspondentes
 async function performRealCapture(
   existingRecorder?: CdpNetworkRecorder | null,
-  initialCleanHtml?: string
+  initialCleanHtml?: string,
+  tabGuard?: TabGuard,
+  targetTabId?: number | null,
+  targetTabUrl?: string,
+  targetTabTitle?: string
 ): Promise<void> {
+  const tabId = targetTabId !== undefined ? targetTabId : (lockedCaptureTabId || currentTabId);
+  const url = targetTabUrl !== undefined ? targetTabUrl : (lockedCaptureUrl || currentTabUrl);
+  const title = targetTabTitle !== undefined ? targetTabTitle : (lockedCaptureTitle || currentTabTitle);
+
+  const guard = tabGuard || (tabId && url ? watchTargetTab(tabId, url) : undefined);
+
+  if (guard?.reason) {
+    const reason = guard.reason;
+    const errorMsg = reason === 'tab_closed'
+      ? 'A aba foi fechada durante a captura.'
+      : 'A aba foi para outro site durante a captura.';
+    setState('gravacao_erro', {
+      errorMsg,
+      retainedText: '0 RECURSOS SALVOS',
+      partialFilename: getLockedCaptureZipFilename(),
+      isInterrupted: true,
+      reason
+    });
+    return;
+  }
+
+  guard?.onInterrupted((reason) => {
+    isCaptureCancelled = true;
+    if (currentState !== 'gravacao_erro') {
+      const errorMsg = reason === 'tab_closed'
+        ? 'A aba foi fechada durante a captura.'
+        : 'A aba foi para outro site durante a captura.';
+      setState('gravacao_erro', {
+        errorMsg,
+        retainedText: '0 RECURSOS SALVOS',
+        partialFilename: getLockedCaptureZipFilename(),
+        isInterrupted: true,
+        reason
+      });
+    }
+  });
+
   const startTime = performance.now();
   setState('baixando', {
     pct: 0,
@@ -2064,20 +2437,20 @@ async function performRealCapture(
     pagesTotal: currentScope === 'esta_pagina' ? 1 : Math.min(12, limitPages),
     mb: '0,0',
     elapsedTime: '00:00',
-    nextItem: currentTabTitle,
+    nextItem: title,
     nextDesc: 'Gravando nós do DOM e dependências'
   });
 
   try {
     // 1. Obtenção do HTML bruto diretamente da aba ativa
     let pageRawHtml = targetTabOverrideHtml || '';
-    if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && currentTabId) {
+    if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && tabId) {
       // Se for modo HTML e houver canvas WebGL, obtém snapshot CDP com clip
       const canvasSnapshots: Array<{ index: number; dataUrl: string }> = [];
       if (currentMode === 'html' && typeof chrome !== 'undefined' && chrome.debugger) {
         try {
           const [{ result: rects }] = await chrome.scripting.executeScript({
-            target: { tabId: currentTabId },
+            target: { tabId },
             func: () => {
               const canvases = Array.from(document.querySelectorAll('canvas'));
               return canvases.map((cv, idx) => {
@@ -2096,11 +2469,11 @@ async function performRealCapture(
 
           if (rects && rects.length > 0) {
             try {
-              await chrome.debugger.attach({ tabId: currentTabId }, '1.3');
+              await chrome.debugger.attach({ tabId }, '1.3');
               for (const c of rects.slice(0, 3)) {
                 try {
                   const shotRes: any = await chrome.debugger.sendCommand(
-                    { tabId: currentTabId },
+                    { tabId },
                     'Page.captureScreenshot',
                     {
                       format: 'png',
@@ -2116,7 +2489,7 @@ async function performRealCapture(
                 } catch {}
               }
             } finally {
-              await chrome.debugger.detach({ tabId: currentTabId }).catch(() => {});
+              await chrome.debugger.detach({ tabId }).catch(() => {});
             }
           }
         } catch (e) {
@@ -2126,7 +2499,7 @@ async function performRealCapture(
 
       try {
         const [{ result: pageData }] = await chrome.scripting.executeScript({
-          target: { tabId: currentTabId },
+          target: { tabId },
           func: (mode: string, snapshots: Array<{ index: number; dataUrl: string }>, serializeFnCode: string) => {
             const getDomHtml = () => {
               try {
@@ -2234,17 +2607,17 @@ async function performRealCapture(
       } catch (cdpErr) {
         console.warn('CDP recorder evaluate falhou:', cdpErr);
       }
-    } else if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.debugger && currentTabId) {
+    } else if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.debugger && tabId) {
       try {
-        await chrome.debugger.attach({ tabId: currentTabId }, '1.3');
-        const evalRes: any = await chrome.debugger.sendCommand({ tabId: currentTabId }, 'Runtime.evaluate', {
+        await chrome.debugger.attach({ tabId }, '1.3');
+        const evalRes: any = await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
           expression: `(${serializeLiveDom.toString()})()`,
           returnByValue: true
         });
         if (evalRes?.result?.value) {
           pageRawHtml = evalRes.result.value;
         }
-        await chrome.debugger.detach({ tabId: currentTabId });
+        await chrome.debugger.detach({ tabId });
       } catch (cdpErr) {
         console.warn('CDP evaluate fallback falhou:', cdpErr);
       }
@@ -2340,13 +2713,24 @@ async function performRealCapture(
 
       const parser = new DOMParser();
       const domDoc = parser.parseFromString(pageRawHtml, 'text/html');
-      const candidates = collectMediaFromDom(domDoc, currentTabUrl || 'http://localhost', selectedTypes);
+      const candidates = collectMediaFromDom(domDoc, url || 'http://localhost', selectedTypes);
+
+      if (!candidates || candidates.length === 0) {
+        isCapturing = false;
+        setState('erro', {
+          errorTitle: 'Nenhuma mídia encontrada',
+          errorDetail: 'Nenhuma mídia encontrada nesta página',
+          isEmptyMedia: true,
+          url
+        });
+        return;
+      }
 
       let res: any = null;
       res = await captureMediaZip({
         candidates,
-        title: currentTabTitle,
-        pageUrl: currentTabUrl,
+        title,
+        pageUrl: url,
         types: selectedTypes,
         maxItems: mediaMaxCount,
         maxPerItemBytes: mediaMaxBytes,
@@ -2377,6 +2761,17 @@ async function performRealCapture(
         }
       });
 
+      if (!res?.stats || res.stats.savedAssets === 0) {
+        isCapturing = false;
+        setState('erro', {
+          errorTitle: 'Nenhuma mídia encontrada',
+          errorDetail: 'Nenhuma mídia encontrada nesta página',
+          isEmptyMedia: true,
+          url
+        });
+        return;
+      }
+
       await triggerBrowserDownload(res.blob, res.filename);
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
       const sizeText = formatBytes(res.blob.size);
@@ -2400,9 +2795,9 @@ async function performRealCapture(
     const crawlMode = currentScope === 'esta_pagina' ? 'page' : (currentScope === 'paginas_vinculadas' ? 'linked' : 'site');
     let result: any = null;
     result = await captureFaithfulSite({
-      tabId: currentTabId || undefined,
-      url: currentTabUrl,
-      title: currentTabTitle,
+      tabId: tabId || undefined,
+      url,
+      title,
       html: pageRawHtml,
       mode: crawlMode,
       limits: {
@@ -2415,6 +2810,7 @@ async function performRealCapture(
       autoscroll: false, // autoscroll já foi executado na fase rolando
       autoscrollOptions: getActiveAutoscrollOptions(),
       recorder: existingRecorder || undefined,
+      tabGuard: guard,
       shouldSkipCurrent: () => {
         if (requestSkipCurrentRequested) {
           requestSkipCurrentRequested = false;
@@ -2447,6 +2843,26 @@ async function performRealCapture(
       }
     });
 
+    if (result?.interrupted || guard?.reason) {
+      isCapturing = false;
+      const reason = (result?.interrupted || guard?.reason || 'navigated_away') as 'tab_closed' | 'navigated_away';
+      const errorMsg = reason === 'tab_closed'
+        ? 'A aba foi fechada durante a captura.'
+        : 'A aba foi para outro site durante a captura.';
+      const totalAssets = result?.stats?.totalAssets || 0;
+      const retainedText = `${totalAssets} RECURSO${totalAssets === 1 ? '' : 'S'} SALVO${totalAssets === 1 ? '' : 'S'}`;
+      const finalFilename = result?.filename || getLockedCaptureZipFilename();
+      setState('gravacao_erro', {
+        errorMsg,
+        retainedText,
+        partialBlob: result?.blob || null,
+        partialFilename: finalFilename,
+        isInterrupted: true,
+        reason
+      });
+      return;
+    }
+
     await triggerBrowserDownload(result.blob, result.filename);
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
@@ -2472,16 +2888,41 @@ async function performRealCapture(
       imagesCount,
       corsErrors: result.stats.brokenImages,
       timeoutErrors: 0,
-      elapsedTime: elapsed
+      elapsedTime: elapsed,
+      warnings: result.warnings
     });
   } catch (err: any) {
+    isCapturing = false;
     console.error('Erro na captura:', err);
-    setState('erro', {
-      errorTitle: 'Falha na Captura do Documento',
-      errorDetail: err?.message || 'O documento HTML da página não pôde ser obtido ou está vazio.',
-      url: currentTabUrl
-    });
+    const isDebuggerDetached =
+      err?.code === 'DEBUGGER_DETACHED' ||
+      err?.name === 'PluckDebuggerDetachedError' ||
+      (typeof err?.message === 'string' && (
+        err.message.includes('DEBUGGER_DETACHED') ||
+        err.message.includes('depuração') ||
+        err.message.includes('Debugger was detached') ||
+        err.message.includes('detached')
+      ));
+
+    if (isDebuggerDetached) {
+      setState('erro', {
+        errorTitle: 'Depuração encerrada',
+        errorDetail: 'A captura foi interrompida porque a depuração foi encerrada.',
+        isDebuggerDetached: true,
+        url
+      });
+    } else {
+      setState('erro', {
+        errorTitle: 'Falha na Captura do Documento',
+        errorDetail: err?.message || 'O documento HTML da página não pôde ser obtido ou está vazio.',
+        url
+      });
+    }
   } finally {
+    isCapturing = false;
+    if (guard) {
+      guard.stop();
+    }
     if (existingRecorder) {
       await existingRecorder.stop().catch(() => {});
     }
@@ -2531,6 +2972,11 @@ export async function handleStartRecording(): Promise<void> {
     return;
   }
 
+  lockedCaptureTabId = currentTabId;
+  lockedCaptureUrl = currentTabUrl;
+  lockedCaptureOrigin = currentTabOrigin;
+  lockedCaptureTitle = currentTabTitle;
+
   try {
     await sessionRecorder.start(currentTabId, currentTabUrl, (errorMsg, state) => {
       let retainedText: string | undefined;
@@ -2542,7 +2988,7 @@ export async function handleStartRecording(): Promise<void> {
           retainedText = `${m}:${s} DE INTERAÇÕES SALVAS`;
         }
       }
-      setState('gravacao_erro', { errorMsg, navigatedToUrl: state.navigatedToUrl, retainedText });
+      setState('gravacao_erro', { errorMsg, navigatedToUrl: state.navigatedToUrl, retainedText, isInterrupted: false });
     });
     setState('gravando');
   } catch (err) {
@@ -2574,6 +3020,10 @@ export function handleRestartRecording(): void {
 
 export async function finishRecordingCapture(resources: CapturedResource[]): Promise<void> {
   const startTime = performance.now();
+  const targetUrl = lockedCaptureUrl || currentTabUrl;
+  const targetTitle = lockedCaptureTitle || currentTabTitle;
+  const targetId = lockedCaptureTabId || currentTabId;
+
   setState('baixando', {
     pct: 0,
     loaded: resources.length,
@@ -2583,16 +3033,16 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
     pagesTotal: 1,
     mb: '0,1',
     elapsedTime: '00:00',
-    nextItem: currentTabTitle,
+    nextItem: targetTitle,
     nextDesc: 'Compactando recursos capturados na sessão'
   });
 
   try {
     let pageRawHtml = targetTabOverrideHtml || '';
-    if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && currentTabId) {
+    if (!pageRawHtml && typeof chrome !== 'undefined' && chrome.scripting && targetId) {
       try {
         const [{ result: pageData }] = await chrome.scripting.executeScript({
-          target: { tabId: currentTabId },
+          target: { tabId: targetId },
           func: (serializeFnCode: string) => {
             try {
               const fn = new Function('return (' + serializeFnCode + ')()');
@@ -2610,14 +3060,14 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
     }
 
     if (!isValidDocumentHtml(pageRawHtml)) {
-      pageRawHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${currentTabTitle || 'Página'}</title></head><body><h1>${currentTabTitle || 'Página Gravada'}</h1></body></html>`;
+      pageRawHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${targetTitle || 'Página'}</title></head><body><h1>${targetTitle || 'Página Gravada'}</h1></body></html>`;
     }
 
     let result: any = null;
     result = await captureFaithfulSite({
-      tabId: currentTabId || undefined,
-      url: currentTabUrl,
-      title: currentTabTitle,
+      tabId: targetId || undefined,
+      url: targetUrl,
+      title: targetTitle,
       html: pageRawHtml,
       mode: 'page',
       limits: {
@@ -2873,15 +3323,15 @@ export async function getPanelActiveTab(): Promise<chrome.tabs.Tab | null> {
 export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
   if (typeof chrome === 'undefined' || !chrome.tabs) return;
 
+  const isBusyState = currentState === 'baixando' || currentState === 'rolando' || currentState === 'analisando' || currentState === 'pronto' || currentState === 'gravacao_erro' || currentState === 'gravando' || isCapturing;
+  if (isBusyState) {
+    return;
+  }
+
   try {
     const targetTab = tabOverride !== undefined ? tabOverride : (await getPanelActiveTab());
 
-    const isBusyState = currentState === 'baixando' || currentState === 'rolando' || currentState === 'analisando' || currentState === 'pronto';
-
     if (!targetTab) {
-      if (isBusyState) {
-        return;
-      }
       currentTabId = null;
       currentTabUrl = '';
       currentTabTitle = 'Nenhuma aba ativa';
@@ -2935,17 +3385,16 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
     if (oTitle) oTitle.textContent = cleanHost || currentTabTitle;
     if (oUrl) oUrl.textContent = currentTabUrl;
 
-    // CENÁRIO 2: Página de sistema interna (chrome://, edge://, about:, devtools:)
-    if (isSystemBrowserPage(currentTabUrl)) {
-      updateSecurityPill(currentTabUrl, targetTab.status);
-      if (!isBusyState) {
-        setState('erro');
+    // Validação de acessibilidade da página (Grupo A - Páginas sem acesso)
+    const access = checkPageAccessibility(currentTabUrl, currentTabTitle);
+    updateSecurityPill(currentTabUrl, targetTab.status);
+
+    if (!access.accessible) {
+      if (!isBusyState && currentState === 'inicio') {
+        renderFooterActions();
       }
       return;
     }
-
-    // CENÁRIO 3: Página web compatível (HTTP, HTTPS, file://)
-    updateSecurityPill(currentTabUrl, targetTab.status);
 
     const popRes = document.getElementById('popover-resolution');
     if (popRes) {
@@ -2957,6 +3406,8 @@ export async function updateActiveTab(tabOverride?: chrome.tabs.Tab) {
     if (validateUrl(currentTabUrl, true).valid) {
       if (currentState === 'erro' || currentState === 'sem_acesso') {
         setState('inicio');
+      } else if (currentState === 'inicio') {
+        renderFooterActions();
       }
       if (currentTabId && typeof chrome !== 'undefined' && chrome.scripting) {
         try {
@@ -3537,6 +3988,32 @@ export function initSidePanel() {
     }
   }
 
+  if (typeof chrome !== 'undefined' && chrome.debugger && chrome.debugger.onDetach) {
+    chrome.debugger.onDetach.addListener((source, reason) => {
+      const isTargetTab = source.tabId === currentTabId || (lockedCaptureTabId !== null && source.tabId === lockedCaptureTabId);
+      if (isTargetTab && (currentState === 'rolando' || currentState === 'baixando' || isCapturing)) {
+        isCaptureCancelled = true;
+        isCapturing = false;
+        if (reason === 'target_closed') {
+          setState('gravacao_erro', {
+            errorMsg: 'A aba foi fechada durante a captura.',
+            retainedText: '0 RECURSOS SALVOS',
+            partialFilename: getLockedCaptureZipFilename(),
+            isInterrupted: true,
+            reason: 'tab_closed'
+          });
+        } else {
+          setState('erro', {
+            errorTitle: 'Depuração encerrada',
+            errorDetail: 'A captura foi interrompida porque a depuração foi encerrada.',
+            isDebuggerDetached: true,
+            url: lockedCaptureUrl || currentTabUrl
+          });
+        }
+      }
+    });
+  }
+
   if (typeof chrome !== 'undefined' && chrome.windows && chrome.windows.onFocusChanged) {
     chrome.windows.onFocusChanged.addListener((winId) => {
       if (winId !== chrome.windows.WINDOW_ID_NONE) {
@@ -3590,11 +4067,13 @@ if (typeof window !== 'undefined') {
     setScrollLimitChoice,
     getLimits: () => ({ limitPages, limitDepth, limitMb, includeSubdomains }),
     getLastDownload: () => lastDownloadInfo,
-    clearLastDownload: () => { lastDownloadInfo = null; },
+    clearLastDownload: () => { lastDownloadInfo = null; isCapturing = false; },
     getInMemoryArchivedFile: () => inMemoryArchivedFile,
     setInMemoryArchivedFile: (f: typeof inMemoryArchivedFile) => { inMemoryArchivedFile = f; },
     isStopAndSaveRequested: () => requestStopAndSaveRequested,
     isSkipCurrentRequested: () => requestSkipCurrentRequested,
+    isCapturing: () => isCapturing,
+    checkPageAccessibility,
     downloadAgain: () => downloadAgain(),
     handleStartRecording: () => handleStartRecording(),
     handleStopRecording: () => handleStopRecording(),
@@ -3627,23 +4106,22 @@ if (typeof window !== 'undefined') {
       if (oTitle) oTitle.textContent = currentTabTitle;
       if (oUrl) oUrl.textContent = currentTabUrl || 'URL oculta pelo navegador · Permissão necessária';
 
-      if (!currentTabUrl) {
-        updateSecurityPillForHiddenUrl();
-        setState('sem_acesso');
-        return;
-      }
-
-      if (isSystemBrowserPage(currentTabUrl)) {
-        updateSecurityPill(currentTabUrl);
-        setState('erro');
-        return;
-      }
-
+      const access = checkPageAccessibility(currentTabUrl, currentTabTitle);
       updateSecurityPill(currentTabUrl);
+
+      if (!access.accessible) {
+        if (currentState === 'inicio') {
+          renderFooterActions();
+        }
+        return;
+      }
+
       if (!validateUrl(currentTabUrl, true).valid) {
         setState('erro');
       } else if (currentState === 'erro' || currentState === 'sem_acesso') {
         setState('inicio');
+      } else if (currentState === 'inicio') {
+        renderFooterActions();
       }
 
       if (url && (url.includes('landonorris') || (html && html.includes('<canvas')))) {
