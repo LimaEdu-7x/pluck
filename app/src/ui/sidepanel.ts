@@ -2491,102 +2491,20 @@ async function performRealCapture(
       }
 
       try {
-        const [{ result: pageData }] = await chrome.scripting.executeScript({
+        const [{ result: pageHtml }] = await chrome.scripting.executeScript({
           target: { tabId },
-          func: (mode: string, snapshots: Array<{ index: number; dataUrl: string }>, serializeFnCode: string) => {
-            const getDomHtml = () => {
-              try {
-                const fn = new Function('return (' + serializeFnCode + ')()');
-                const s = fn();
-                if (s && s.length > 50) return s;
-              } catch {}
-              return document.documentElement.outerHTML;
-            };
-
-            // Se for modo HTML autossuficiente (sem scripts), congela o estado visível e converte canvas
-            if (mode === 'html') {
-              try {
-                // 1. Revela elementos animados que GSAP/ScrollTrigger oculta ao rolar para o topo
-                const revealEls = document.querySelectorAll(
-                  '[data-reveal], [data-choreo], [data-draw-rule], [data-draw-tick], [data-draw-eyebrow], [data-reveal-group], [data-w-id], [class*="reveal"], [class*="choreo"]'
-                );
-                revealEls.forEach((el) => {
-                  const h = el as HTMLElement;
-                  if (h.classList && h.classList.contains('high-line-reveal')) return;
-                  if (h.style) {
-                    if (h.style.opacity === '0') h.style.opacity = '1';
-                    if (h.style.visibility === 'hidden') h.style.visibility = 'visible';
-                    if (h.style.filter && h.style.filter.includes('blur')) h.style.filter = 'none';
-                    if (h.style.transform && h.style.transform.includes('translate')) h.style.transform = 'none';
-                    if (h.style.transform && h.style.transform.includes('scale(0')) h.style.transform = 'scale(1, 1)';
-                  }
-                });
-
-                // 2. Converte canvas WebGL para imagem estática (snapshot CDP prioritário ou toDataURL)
-                const canvases = Array.from(document.querySelectorAll('canvas'));
-                const createdImgs: HTMLElement[] = [];
-                canvases.forEach((cv, idx) => {
-                  try {
-                    let dataUrl = '';
-                    const matchCdp = snapshots ? snapshots.find((s) => s.index === idx) : null;
-                    if (matchCdp && matchCdp.dataUrl) {
-                      dataUrl = matchCdp.dataUrl;
-                    } else if (cv.width > 20 && cv.height > 20) {
-                      try { dataUrl = cv.toDataURL('image/png'); } catch {}
-                    }
-
-                    if (dataUrl && dataUrl.length > 100) {
-                      const img = document.createElement('img');
-                      img.src = dataUrl;
-                      img.className = cv.className;
-                      img.setAttribute('data-pluck-canvas-img', 'true');
-                      img.setAttribute('style', cv.getAttribute('style') || '');
-                      img.setAttribute('width', String(cv.width || cv.clientWidth));
-                      img.setAttribute('height', String(cv.height || cv.clientHeight));
-                      try {
-                        const comp = window.getComputedStyle(cv);
-                        if (comp.position === 'absolute' || comp.position === 'fixed') {
-                          img.style.position = comp.position;
-                          img.style.top = comp.top;
-                          img.style.left = comp.left;
-                          img.style.right = comp.right;
-                          img.style.bottom = comp.bottom;
-                          img.style.zIndex = comp.zIndex;
-                          img.style.transform = comp.transform;
-                        }
-                        img.style.width = comp.width;
-                        img.style.height = comp.height;
-                        img.style.objectFit = 'contain';
-                      } catch {}
-                      cv.parentElement?.insertBefore(img, cv);
-                      cv.style.display = 'none';
-                      createdImgs.push(img);
-                    }
-                  } catch {}
-                });
-
-                const html = getDomHtml();
-                const title = document.title || 'Página';
-
-                // Restaura o DOM original na aba ativa para não interferir na renderização viva
-                createdImgs.forEach((img) => img.remove());
-                canvases.forEach((cv) => { cv.style.display = ''; });
-
-                return { html, title };
-              } catch {}
-            }
-
-            return {
-              html: getDomHtml(),
-              title: document.title || 'Página'
-            };
-          },
-          args: [currentMode, canvasSnapshots, serializeLiveDom.toString()]
+          func: serializeLiveDom,
+          args: [null, { capture: { freeze: currentMode === 'html', canvasSnapshots } }]
         });
-        if (pageData && pageData.html) {
-          pageRawHtml = pageData.html;
-          currentTabTitle = pageData.title || currentTabTitle;
+        if (pageHtml) {
+          pageRawHtml = pageHtml;
         }
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab?.title) {
+            currentTabTitle = tab.title;
+          }
+        } catch {}
       } catch (scriptErr) {
         console.warn('executeScript falhou ao ler DOM:', scriptErr);
       }
@@ -3036,15 +2954,8 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
       try {
         const [{ result: pageData }] = await chrome.scripting.executeScript({
           target: { tabId: targetId },
-          func: (serializeFnCode: string) => {
-            try {
-              const fn = new Function('return (' + serializeFnCode + ')()');
-              const s = fn();
-              if (s && s.length > 50) return s;
-            } catch {}
-            return document.documentElement.outerHTML;
-          },
-          args: [serializeLiveDom.toString()]
+          func: serializeLiveDom,
+          args: []
         });
         if (pageData) pageRawHtml = pageData;
       } catch (e) {
@@ -3449,7 +3360,7 @@ export function initSidePanel() {
   // [BUG 2] Fonte única de versão: lê manifest.json da extensão
   const brandTag = document.getElementById('brandTag');
   if (brandTag) {
-    let ver = '0.6.0';
+    let ver = '0.7.0';
     if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
       try {
         ver = chrome.runtime.getManifest()?.version || ver;

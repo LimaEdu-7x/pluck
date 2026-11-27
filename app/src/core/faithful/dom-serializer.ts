@@ -4,6 +4,8 @@ export interface DomSerializerOptions {
   includeDeclarativeShadowDom?: boolean;
   resolveLazyImages?: boolean;
   forceEagerImages?: boolean;
+  /** Captura do painel: freeze congela o estado visível (modo HTML) e usa os snapshots de canvas do CDP. */
+  capture?: { freeze: boolean; canvasSnapshots?: Array<{ index: number; dataUrl: string }> };
 }
 
 /**
@@ -250,5 +252,76 @@ export function serializeLiveDom(
     root === undefined || root === null
       ? `<!--pluck-source-origin:${typeof location !== 'undefined' ? location.origin : ''}-->`
       : '';
-  return serializeNode(targetRoot) + stamp;
+  if (!opts.capture) return serializeNode(targetRoot) + stamp;
+
+  // Captura do painel (uma só injeção, sem string nem new Function): no modo HTML congela o estado
+  // visível (revela animações e troca canvas por imagem), serializa e restaura o que mexeu.
+  // shortcut: restaura só imagens e canvas; reveal de estilo segue como antes, ajustar se a aba ficar estranha
+  const cap = opts.capture;
+  const createdImgs: HTMLElement[] = [];
+  const hiddenCanvases: HTMLElement[] = [];
+  let html = '';
+  try {
+    if (cap.freeze) {
+      const revealEls = document.querySelectorAll(
+        '[data-reveal], [data-choreo], [data-draw-rule], [data-draw-tick], [data-draw-eyebrow], [data-reveal-group], [data-w-id], [class*="reveal"], [class*="choreo"]'
+      );
+      revealEls.forEach((el) => {
+        const h = el as HTMLElement;
+        if (h.classList && h.classList.contains('high-line-reveal')) return;
+        if (h.style) {
+          if (h.style.opacity === '0') h.style.opacity = '1';
+          if (h.style.visibility === 'hidden') h.style.visibility = 'visible';
+          if (h.style.filter && h.style.filter.includes('blur')) h.style.filter = 'none';
+          if (h.style.transform && h.style.transform.includes('translate')) h.style.transform = 'none';
+          if (h.style.transform && h.style.transform.includes('scale(0')) h.style.transform = 'scale(1, 1)';
+        }
+      });
+
+      Array.from(document.querySelectorAll('canvas')).forEach((cv, idx) => {
+        try {
+          const cdp = cap.canvasSnapshots ? cap.canvasSnapshots.find((s) => s.index === idx) : null;
+          let dataUrl = cdp && cdp.dataUrl ? cdp.dataUrl : '';
+          if (!dataUrl && cv.width > 20 && cv.height > 20) {
+            try { dataUrl = cv.toDataURL('image/png'); } catch {}
+          }
+          if (!dataUrl || dataUrl.length <= 100) return;
+
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.className = cv.className;
+          img.setAttribute('data-pluck-canvas-img', 'true');
+          img.setAttribute('style', cv.getAttribute('style') || '');
+          img.setAttribute('width', String(cv.width || cv.clientWidth));
+          img.setAttribute('height', String(cv.height || cv.clientHeight));
+          try {
+            const comp = window.getComputedStyle(cv);
+            if (comp.position === 'absolute' || comp.position === 'fixed') {
+              img.style.position = comp.position;
+              img.style.top = comp.top;
+              img.style.left = comp.left;
+              img.style.right = comp.right;
+              img.style.bottom = comp.bottom;
+              img.style.zIndex = comp.zIndex;
+              img.style.transform = comp.transform;
+            }
+            img.style.width = comp.width;
+            img.style.height = comp.height;
+            img.style.objectFit = 'contain';
+          } catch {}
+          cv.parentElement?.insertBefore(img, cv);
+          cv.style.display = 'none';
+          createdImgs.push(img);
+          hiddenCanvases.push(cv);
+        } catch {}
+      });
+    }
+    html = serializeNode(targetRoot) + stamp;
+  } catch {
+    html = '';
+  } finally {
+    createdImgs.forEach((img) => img.remove());
+    hiddenCanvases.forEach((cv) => { cv.style.display = ''; });
+  }
+  return html.length > 50 ? html : document.documentElement.outerHTML;
 }
