@@ -118,3 +118,11 @@ export function createMetricRow(label: string, val: string, valClass?: string): 
   return row;
 }
 
+
+const MESES_FICHA = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+
+/** Data da ficha no estilo datilografado: "27 NOV 2026 · 14:32" (hora local). */
+export function formatFichaStamp(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())} ${MESES_FICHA[d.getMonth()]} ${d.getFullYear()} · ${p(d.getHours())}:${p(d.getMinutes())}`;
+}

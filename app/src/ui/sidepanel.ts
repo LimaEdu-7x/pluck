@@ -1,3 +1,4 @@
+import { formatFichaStamp } from './ui-helpers';
 import { validateUrl, isLocalhostPage, classifyTabAccess } from '../core/security/url-guard';
 import { pageHtmlModule } from '../modules';
 import { captureFaithfulSite } from '../core/faithful/faithful-engine';
@@ -108,7 +109,7 @@ let recordingStartTime: number | null = null;
 // Estado da aba e sessão
 let currentTabId: number | null = null;
 let currentTabUrl: string = '';
-let currentTabTitle: string = 'Aguardando aba...';
+let currentTabTitle: string = 'Aguardando aba…';
 let currentTabOrigin: string = '';
 let targetTabOverrideHtml: string | null = null;
 let loginConsentAccepted = false;
@@ -215,7 +216,7 @@ export function resetToInitialState() {
   const scrollFill = document.getElementById('scrollFill');
   if (scrollFill) scrollFill.style.width = '0%';
   const scrollStepNote = document.getElementById('scrollStepNote');
-  if (scrollStepNote) scrollStepNote.textContent = 'Iniciando rolagem suave do DOM...';
+  if (scrollStepNote) scrollStepNote.textContent = 'Iniciando a rolagem da página…';
   const scrollVerticalPos = document.getElementById('scrollVerticalPos');
   if (scrollVerticalPos) scrollVerticalPos.textContent = '0 px de 0 px';
   const scrollImagesCount = document.getElementById('scrollImagesCount');
@@ -234,7 +235,7 @@ export function resetToInitialState() {
   if (downProgressbar) downProgressbar.setAttribute('aria-valuenow', '0');
   lastAnnouncedMilestone = -1;
   const downFile = document.getElementById('downFile');
-  if (downFile) downFile.textContent = 'Iniciando captura de recursos...';
+  if (downFile) downFile.textContent = 'Iniciando captura de recursos…';
   const cntPages = document.getElementById('cntPages');
   if (cntPages) cntPages.textContent = '1 de 1 página (100%)';
   const cntRes = document.getElementById('cntRes');
@@ -477,7 +478,7 @@ function updateSecurityPill(url: string, tabStatus?: string) {
       if (ring) ring.className = 'ring-spin-amber';
       if (badge) {
         badge.className = 'security-badge warn';
-        badge.textContent = 'Carregando...';
+        badge.textContent = 'Carregando…';
       }
       if (popStatus) {
         popStatus.replaceChildren();
@@ -675,7 +676,12 @@ export function announceProgressMilestone(pct: number, customText?: string) {
   }
 }
 
+// Momento do arquivamento: fixado na chegada à tela Pronto, para re-renders não mudarem a hora da ficha
+let archivedAtStamp: string | null = null;
+
 export function setState(state: UiState, data?: any) {
+  if (state !== 'pronto') archivedAtStamp = null;
+  else if (!archivedAtStamp) archivedAtStamp = formatFichaStamp(new Date());
   currentState = state;
 
   if (state === 'inicio') {
@@ -748,12 +754,12 @@ export function setState(state: UiState, data?: any) {
     if (subRolagem) subRolagem.style.display = sub === 'rolagem' ? 'flex' : 'none';
     if (detBadge) detBadge.style.display = sub === 'rolagem' ? 'block' : 'none';
     if (titleEl) {
-      titleEl.textContent = sub === 'site' ? 'Opções de Site inteiro' : (sub === 'midias' ? 'Filtros de Mídias' : 'Rolagem Infinita');
+      titleEl.textContent = sub === 'site' ? 'Opções de Site inteiro' : (sub === 'midias' ? 'Filtros de mídias' : 'Rolagem infinita');
     }
     if (subEl) {
       subEl.textContent = sub === 'site'
-        ? 'Defina os limites de navegação para varrer as páginas internas.'
-        : (sub === 'midias' ? 'Escolha os tipos de arquivos e limites para o ZIP.' : 'Esta página carrega novos itens continuamente conforme você rola para baixo.');
+        ? 'Defina até onde o Pluck segue os links internos do site.'
+        : (sub === 'midias' ? 'Escolha os tipos de arquivo e os limites do ZIP.' : 'Esta página carrega itens novos conforme você rola. Até onde o Pluck deve rolar?');
     }
     const siteSubSw = document.getElementById('siteSubdomainsSwitch');
     if (siteSubSw) {
@@ -773,8 +779,8 @@ export function setState(state: UiState, data?: any) {
     const semDet = document.getElementById('semAcessoDetail');
     if (semDet) {
       semDet.textContent = currentTabTitle
-        ? `Aba ativa identificada: "${currentTabTitle}"`
-        : "Permissão 'tabs' necessária no navegador";
+        ? `O navegador não informou o endereço de "${currentTabTitle}" ao Pluck.`
+        : 'O Pluck precisa da permissão de abas (tabs) para ler o endereço desta aba.';
     }
   } else if (state === 'erro') {
     lastErrorData = data;
@@ -807,8 +813,8 @@ export function setState(state: UiState, data?: any) {
     const errProto = document.getElementById('erroProtocol');
     if (errProto) {
       errProto.textContent = currentTabUrl
-        ? `Protocolo atual: ${currentTabUrl.split('?')[0]}`
-        : 'Página de sistema interno do navegador';
+        ? `Endereço: ${currentTabUrl.split('?')[0]}`
+        : 'Esta é uma página interna do navegador.';
     }
   } else if (state === 'login') {
     if (pill) pill.className = 'domain-pill warn';
@@ -896,7 +902,7 @@ function populateStateData(state: UiState, data?: any) {
       if (rCount && data.resources) rCount.textContent = `${data.resources} recursos mapeados no domínio`;
       if (sum) {
         sum.textContent = currentScope === 'esta_pagina'
-          ? 'Análise da página ativa em andamento...'
+          ? 'Análise da página ativa em andamento…'
           : `Varredura em andamento · Limite: até ${limitPages} páginas ou ${limitMb} MB`;
       }
     }
@@ -942,6 +948,10 @@ function populateStateData(state: UiState, data?: any) {
       if (nextDesc && data.nextDesc) nextDesc.textContent = data.nextDesc;
     }
   } else if (state === 'pronto') {
+    for (const id of ['prontoZipStamp', 'prontoHtmlStamp']) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = archivedAtStamp ? `ARQUIVADO ${archivedAtStamp}` : '';
+    }
     if (currentMode === 'html') {
       const pName = document.getElementById('prontoHtmlFilename');
       const pSuper = document.getElementById('prontoHtmlSuper');
@@ -965,11 +975,11 @@ function populateStateData(state: UiState, data?: any) {
       if (pName) pName.textContent = data?.filename || 'pagina.html';
       if (pSuper) pSuper.textContent = 'ARQUIVAMENTO CONCLUÍDO';
       if (pTitle) pTitle.textContent = 'Página arquivada!';
-      if (pDesc) pDesc.textContent = 'O arquivo HTML foi gerado e está pronto para uso offline.';
+      if (pDesc) pDesc.textContent = 'O arquivo HTML foi gerado e já pode ser aberto.';
       if (pBadge) pBadge.textContent = 'ARQUIVO ÚNICO';
       if (pExpl) pExpl.textContent = 'Abre com dois cliques em qualquer navegador. As imagens são carregadas do site original, então precisa de internet.';
-      if (pMeta) pMeta.textContent = `${data?.sizeText || '480 KB'} · Arquivo autossuficiente · ${totalEmbedded} recursos embutidos`;
-      if (pDoc) pDoc.textContent = '1 arquivo .html autossuficiente';
+      if (pMeta) pMeta.textContent = data?.sizeText ? `Tamanho do arquivo: ${data.sizeText}` : '';
+      if (pDoc) pDoc.textContent = '1 arquivo .html';
       if (pStyles) pStyles.textContent = `${stylesCount} folha${stylesCount === 1 ? '' : 's'} de estilo inline`;
       if (pAssets) pAssets.textContent = `${totalEmbedded} recursos (${imagesCount} imgs, ${fontsCount} fontes)`;
       if (pOmitted) {
@@ -1092,20 +1102,20 @@ function populateStateData(state: UiState, data?: any) {
       if (currentTabOrigin) safeHost = new URL(currentTabOrigin).hostname;
     } catch {}
     if (pDom) pDom.textContent = safeHost;
-    if (pScope) pScope.textContent = `Rotas sob ${safeHost}`;
+    if (pScope) pScope.textContent = `Para o modo Site inteiro em ${safeHost}`;
   } else if (state === 'erro') {
     const errTitle = document.getElementById('erroTitle');
     const errSub = document.getElementById('erroSub');
     const errProto = document.getElementById('erroProtocol');
-    if (errTitle) errTitle.textContent = data?.errorTitle || 'Página de sistema incompatível';
-    if (errSub) errSub.textContent = data?.errorDetail || 'Navegadores bloqueiam extensões em abas internas';
+    if (errTitle) errTitle.textContent = data?.errorTitle || 'Esta página não pode ser arquivada';
+    if (errSub) errSub.textContent = data?.errorDetail || 'O navegador não deixa extensões lerem páginas internas, como configurações e lojas de extensões.';
     if (errProto) {
       if (data?.errorDetail && (data.isDebuggerDetached || data.isEmptyMedia)) {
         errProto.textContent = data.errorDetail;
       } else if (data?.url) {
-        errProto.textContent = `URL: ${data.url}`;
+        errProto.textContent = `Endereço: ${data.url}`;
       } else {
-        errProto.textContent = 'Selecione uma aba com página web comum (HTTP, HTTPS, file://)';
+        errProto.textContent = 'Abra um site comum nesta aba (http, https ou um arquivo local) para arquivar.';
       }
     }
   } else if (state === 'gravando') {
@@ -1151,7 +1161,7 @@ function populateStateData(state: UiState, data?: any) {
         if (msgEl) msgEl.textContent = 'A aba foi para outro site durante a captura.';
       }
       if (subEl) {
-        subEl.textContent = 'Escolha se deseja salvar o que já capturou antes de sair ou recomeçar.';
+        subEl.textContent = 'Salve o que já capturou ou recomece.';
       }
       if (presLbl) {
         presLbl.textContent = 'Captura preservada:';
@@ -1168,7 +1178,7 @@ function populateStateData(state: UiState, data?: any) {
         msgEl.textContent = data?.errorMsg || `A gravação vale só para a página onde começou. Você saiu de ${origHost} para outro endereço.`;
       }
       if (subEl) {
-        subEl.textContent = 'Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.';
+        subEl.textContent = 'Salve o que já gravou ou recomece na página original.';
       }
       if (presLbl) {
         presLbl.textContent = 'Gravação preservada:';
@@ -2432,7 +2442,7 @@ async function performRealCapture(
     pct: 0,
     loaded: 0,
     total: 1,
-    currentItem: 'Iniciando captura...',
+    currentItem: 'Iniciando captura…',
     pagesDone: 1,
     pagesTotal: currentScope === 'esta_pagina' ? 1 : Math.min(12, limitPages),
     mb: '0,0',
@@ -2654,7 +2664,7 @@ async function performRealCapture(
             pct,
             loaded,
             total,
-            currentItem: item || 'Salvando HTML autossuficiente...',
+            currentItem: item || 'Salvando o HTML…',
             pagesDone: 1,
             pagesTotal: 1,
             mb: '0,1',
@@ -2750,7 +2760,7 @@ async function performRealCapture(
             pct,
             loaded,
             total,
-            currentItem: item || 'Gravando mídia...',
+            currentItem: item || 'Gravando mídia…',
             pagesDone: 1,
             pagesTotal: 1,
             mb: ((loaded * 80) / 1024).toFixed(1).replace('.', ','),
@@ -2832,7 +2842,7 @@ async function performRealCapture(
           pct,
           loaded,
           total,
-          currentItem: item || 'Compactando...',
+          currentItem: item || 'Compactando…',
           pagesDone: currentScope === 'esta_pagina' ? 1 : (result?.stats?.totalPages || 1),
           pagesTotal: currentScope === 'esta_pagina' ? 1 : Math.min(12, limitPages),
           mb: estMb,
@@ -3028,7 +3038,7 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
     pct: 0,
     loaded: resources.length,
     total: Math.max(1, resources.length),
-    currentItem: 'Processando recursos gravados...',
+    currentItem: 'Processando recursos gravados…',
     pagesDone: 1,
     pagesTotal: 1,
     mb: '0,1',
@@ -3084,7 +3094,7 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
           pct,
           loaded,
           total,
-          currentItem: item || 'Compactando gravação...',
+          currentItem: item || 'Compactando gravação…',
           pagesDone: 1,
           pagesTotal: 1,
           mb: ((loaded * 80) / 1024).toFixed(1).replace('.', ','),
@@ -3456,13 +3466,14 @@ export function initSidePanel() {
   // [BUG 2] Fonte única de versão: lê manifest.json da extensão
   const brandTag = document.getElementById('brandTag');
   if (brandTag) {
-    let ver = '0.2.0';
+    let ver = '0.3.0';
     if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
       try {
         ver = chrome.runtime.getManifest()?.version || ver;
       } catch {}
     }
-    brandTag.textContent = 'v0.2';
+    // versão na tela = MAIOR.MENOR do manifest (0.1 … 0.9, 1.0, 1.1 …)
+    brandTag.textContent = `v${ver.split('.').slice(0, 2).join('.')}`;
   }
 
   // Bind Scope Tabs

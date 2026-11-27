@@ -59,6 +59,18 @@
   --status-loading: #F59E0B;
   --status-danger: #EF4444;
   --status-danger-ring: rgba(239, 68, 68, 0.7);
+  /* sinal em superfície: linha e lavagem, sempre derivadas do mesmo vermelho */
+  --status-danger-line: rgba(239, 68, 68, 0.4);
+  --status-danger-wash: rgba(239, 68, 68, 0.08);
+
+  /* o painel é só escuro: fixa os tokens genéricos de tokens.css que o JS usa,
+     para o tema claro do sistema não pintar texto escuro sobre a tinta */
+  --text: var(--text-primary);
+  --surface-2: var(--bg-input-box);
+  --border: var(--border-card);
+  --accent: #FFFFFF;
+  --status-muted: var(--text-muted);
+  color-scheme: dark;
 
   --font-display: 'Archivo', sans-serif;
   --font-body: 'Geist', sans-serif;
@@ -75,6 +87,8 @@ html, body {
   color: var(--text-primary);
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  /* Special Elite e Archivo têm um peso só: nunca inventar negrito/itálico falso */
+  font-synthesis: none;
 }
 
 /* NATIVE SIDE PANEL APP ROOT */
@@ -122,6 +136,7 @@ input[type="checkbox"]:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .brand-icon {
@@ -184,6 +199,7 @@ input[type="checkbox"]:focus-visible {
   color: #FFFFFF;
   line-height: 1.2;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 .type-special {
@@ -301,7 +317,6 @@ input[type="checkbox"]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .ring-pulse-green,
   .ring-pulse-red,
-  .rec-pulse-dot,
   .ring-spin-amber {
     animation: none !important;
   }
@@ -311,6 +326,8 @@ input[type="checkbox"]:focus-visible {
 .panel-body {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-chip) transparent;
   overflow-x: hidden;
   padding: 16px 18px;
   display: flex;
@@ -340,26 +357,6 @@ input[type="checkbox"]:focus-visible {
   .btn-secondary { height: 38px !important; font-size: 13.5px !important; }
 }
 
-.btn-ghost-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #A2A19D;
-  font-size: 13px;
-  cursor: pointer;
-  text-decoration: none;
-  margin-bottom: 8px;
-  background: none;
-  border: none;
-  font-family: var(--font-body);
-  padding: 0;
-  transition: color 120ms ease;
-}
-
-.btn-ghost-back:hover {
-  color: #FFFFFF;
-}
-
 @media (min-width: 360px) and (max-width: 479px) {
   .panel-body { padding: 16px 18px; }
   .panel-footer { padding: 14px 18px; }
@@ -380,6 +377,48 @@ input[type="checkbox"]:focus-visible {
 
 .view-state.active {
   display: flex;
+  /* continuidade: cada tela chega já visível no fim, nunca depende de JS */
+  animation: pluck-view-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pluck-view-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+
+@keyframes pluck-fade-in {
+  from { opacity: 0; }
+}
+
+/* momento autoral: o selo do arquivo pronto carimba o cartão, como num fichário */
+.panel-card.is-result .badge {
+  animation: pluck-stamp 280ms cubic-bezier(0.16, 1, 0.3, 1) 140ms both;
+}
+
+@keyframes pluck-stamp {
+  from { opacity: 0; transform: scale(1.4) rotate(-6deg); }
+  60% { opacity: 1; }
+}
+
+/* feedback de seleção: o ponto do radio cresce do centro */
+.card.selected .mode-radio::after,
+.radio-circle.active .radio-dot {
+  animation: pluck-dot-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pluck-dot-in {
+  from { transform: scale(0); }
+}
+
+/* movimento reduzido: sem deslocamento nem escala; a troca de estado segue legível por opacidade */
+@media (prefers-reduced-motion: reduce) {
+  .view-state.active,
+  .panel-card.is-result .badge {
+    animation-name: pluck-fade-in;
+  }
+  .card.selected .mode-radio::after,
+  .radio-circle.active .radio-dot {
+    animation: none;
+  }
 }
 
 /* HERO TITLE (1. INÍCIO) */
@@ -396,7 +435,9 @@ input[type="checkbox"]:focus-visible {
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
-  word-break: break-word;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  overflow-wrap: break-word;
 }
 
 .origin-hero-sub {
@@ -489,40 +530,6 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-primary);
 }
 
-.mode-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-card-options {
-  background: transparent;
-  border: 1px solid var(--border-card);
-  border-radius: 4px;
-  padding: 2px 7px;
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 120ms ease;
-}
-
-.btn-card-options:hover {
-  border-color: #FFFFFF;
-  color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.btn-card-options:active {
-  transform: scale(0.96);
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.btn-card-options:focus-visible {
-  outline: 2px solid #FFFFFF;
-  outline-offset: 2px;
-}
-
 .mode-badge {
   font-family: var(--font-special);
   font-size: 11px;
@@ -548,8 +555,8 @@ input[type="checkbox"]:focus-visible {
   padding: 2px 7px;
   border-radius: 3px;
   cursor: pointer;
-  letter-spacing: 0.05em;
-  transition: all 120ms ease;
+  letter-spacing: 0.04em;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 100ms ease;
   display: inline-flex;
   align-items: center;
 }
@@ -575,6 +582,7 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-secondary);
   line-height: 1.35;
   padding-left: 26px;
+  text-wrap: pretty;
 }
 
 .mode-note {
@@ -602,6 +610,7 @@ input[type="checkbox"]:focus-visible {
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin-bottom: 2px;
 }
 
@@ -646,12 +655,14 @@ input[type="checkbox"]:focus-visible {
   flex-direction: column;
   gap: 2px;
   flex: 1;
+  min-width: 0;
 }
 
 .option-header {
   display: flex;
+  flex-wrap: wrap; /* com zoom alto o selo desce para a linha de baixo em vez de estourar o painel */
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
 }
 
 .act-title {
@@ -661,11 +672,13 @@ input[type="checkbox"]:focus-visible {
   color: var(--text-primary);
 }
 
+/* descrição de opção = mesmo papel de .mode-desc (Body 13.5px) */
 .desc-text {
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--text-secondary);
   line-height: 1.35;
+  text-wrap: pretty;
 }
 
 .badge {
@@ -676,13 +689,8 @@ input[type="checkbox"]:focus-visible {
   letter-spacing: 0.04em;
 }
 
-.badge-green {
-  color: var(--text-muted);
-  border: 1px solid var(--border-divider);
-}
-
 .options-detected-badge {
-  margin-bottom: 3px;
+  align-self: flex-start;
   display: none;
 }
 
@@ -738,62 +746,156 @@ input[type="checkbox"]:focus-visible {
   border-radius: 50%;
   position: absolute;
   top: 2px;
-  left: 16px;
-  transition: left 150ms ease, background 150ms ease;
+  left: 2px;
+  transform: translateX(14px);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms ease;
 }
 
 .switch-track.off .switch-knob {
-  left: 2px;
+  transform: none;
   background: #FFFFFF;
 }
 
 /* 2. TELA OPÇÕES */
-.state-header-options {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
-.btn-back-header {
-  background: transparent;
-  border: 1px solid var(--border-card);
-  border-radius: 4px;
-  padding: 6px 10px;
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-size: 13px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.btn-back-header:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.btn-back-header:active {
-  transform: scale(0.97);
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.btn-back-header:focus-visible {
-  outline: 2px solid #FFFFFF;
-  outline-offset: 2px;
-}
-
-.options-title {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
 .options-subview {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+/* lista de radios (rolagem) fica no mesmo passo dos modos da tela Início */
+.options-subview.is-list {
+  gap: 8px;
+}
+
+/* CABEÇALHO DE ESTADO: status + título + subtítulo coesos; 4px + gap 12 = 16px até o conteúdo */
+.state-head,
+.state-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.state-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-special);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.state-eyebrow.is-danger { color: var(--status-danger); }
+.state-eyebrow.is-ready { color: var(--status-ready); }
+
+/* CARTÕES DE ESTADO (gravação, erro, pronto): mesmo raio e borda dos cartões de modo */
+.panel-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-card.is-danger {
+  border-color: var(--status-danger-line);
+}
+
+.panel-card.is-result {
+  border: 2px solid var(--border-card-selected);
+  padding: 13px; /* compensa borda de 2px */
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-head .act-title {
+  overflow-wrap: anywhere;
+}
+
+/* ficha: data do arquivamento, datilografada logo abaixo do nome do arquivo */
+.ficha-stamp {
+  font-family: var(--font-special);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-top: -4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ficha-stamp:empty {
+  display: none;
+}
+
+.card-text {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.card-text.is-strong {
+  font-size: 13.5px;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.is-underlined {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.panel-inset {
+  background: var(--bg-input-box);
+  border: 1px solid rgba(242, 241, 238, 0.12);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+/* bloco, não flex: o texto corrido mistura strong/span inline */
+.panel-inset > * + * {
+  margin-top: 4px;
+}
+
+.panel-inset.is-muted {
+  color: var(--text-secondary);
+}
+
+.panel-inset strong,
+.panel-inset .type-special {
+  color: var(--text-primary);
+}
+
+.panel-inset.is-danger {
+  background: var(--status-danger-wash);
+  border-color: var(--status-danger-line);
+}
+
+.rec-timer {
+  align-items: center;
+  text-align: center;
+  padding: 20px 14px;
+  gap: 4px;
+}
+
+.rec-timer-value {
+  font-family: var(--font-special);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .options-card {
@@ -824,7 +926,7 @@ input[type="checkbox"]:focus-visible {
   padding: 6px 10px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 100ms ease;
 }
 
 .chip-option:hover {
@@ -852,13 +954,19 @@ input[type="checkbox"]:focus-visible {
   background: #FFFFFF;
   color: #0B0B0C;
   border-color: #FFFFFF;
-  font-weight: 700;
 }
 
 .toggle-card {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.toggle-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .media-filters-list {
@@ -939,7 +1047,7 @@ input[type="checkbox"]:focus-visible {
 }
 
 .options-footer-action {
-  margin-top: 10px;
+  margin-top: 4px;
 }
 
 /* 3. TELA PROGRESSO */
@@ -955,7 +1063,7 @@ input[type="checkbox"]:focus-visible {
 .progress-pct-huge {
   font-family: var(--font-special);
   font-size: 38px;
-  font-weight: 700;
+  font-weight: 400;
   color: var(--text-primary);
   line-height: 1;
 }
@@ -1012,118 +1120,7 @@ input[type="checkbox"]:focus-visible {
 .m-val {
   color: var(--text-primary);
   font-family: var(--font-special);
-  font-weight: 600;
-}
-
-/* GRAVANDO */
-.rec-pulse-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: 9999px;
-  margin-bottom: 4px;
-}
-
-.rec-pulse-badge.warn {
-  border-color: rgba(245, 158, 11, 0.4);
-}
-
-.rec-pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--status-danger);
-  animation: pluck-ping 1.5s infinite;
-}
-
-.rec-pulse-dot.warn {
-  background: var(--status-loading);
-  animation: none;
-}
-
-.rec-pulse-text {
-  font-family: var(--font-special);
-  font-size: 11px;
-  color: var(--status-danger);
-}
-
-.rec-pulse-text.warn {
-  color: var(--status-loading);
-}
-
-/* 4. TELA PRONTO */
-.success-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 16px 0 8px;
-  gap: 6px;
-}
-
-.success-icon-wrap {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(62, 207, 142, 0.12);
-  border: 1.5px solid var(--status-ready);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 4px;
-}
-
-.success-title {
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.success-sub {
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  color: var(--text-secondary);
-}
-
-.file-badge-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  background: #18191E;
-}
-
-.file-icon-box {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #FFFFFF;
-}
-
-.file-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.file-name {
-  font-family: var(--font-display);
-  font-size: 14.5px;
-  font-weight: 700;
-  color: #FFFFFF;
-}
-
-.file-meta {
-  font-family: var(--font-body);
-  font-size: 13px;
-  color: var(--text-muted);
+  font-weight: 400;
 }
 
 /* FOOTER ACTIONS DOCK (Garantia de botão na dobra 720px) */
@@ -1199,7 +1196,7 @@ input[type="checkbox"]:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 100ms ease;
 }
 
 .btn-secondary:hover {
@@ -1309,3 +1306,96 @@ input[type="checkbox"]:focus-visible {
   }
 }
 
+
+
+/* ADAPTAÇÃO DO PAINEL ---------------------------------------------------- */
+
+/* painel largo: a coluna para em 600px para as linhas não passarem de ~75 caracteres;
+   alinhada à esquerda, na mesma margem da marca no cabeçalho */
+.view-state,
+.panel-footer > * {
+  max-width: 600px;
+}
+
+/* zoom alto ou painel mínimo (~260px efetivos): a versão sai para a marca e o chip do site caberem */
+@media (max-width: 259px) {
+  .brand-ver { display: none; }
+  .site-chip { gap: 6px; padding: 4px 8px; }
+}
+
+/* área de toque do switch: o desenho segue com 32x18, o alvo invisível chega a 44x44 */
+.switch-track::after {
+  content: '';
+  position: absolute;
+  inset: -13px -6px;
+}
+
+/* toque (notebook com tela touch, tablet): alvos de no mínimo 40px nos chips e selos de ação */
+@media (pointer: coarse) {
+  .chip-option {
+    min-height: 40px;
+    padding: 10px 14px;
+  }
+  .chips-selector {
+    gap: 8px;
+  }
+  /* o selo é posicionado sobre o cartão: cresce o alvo, não o desenho, para não cobrir a descrição */
+  .mode-badge.action-badge::after {
+    content: '';
+    position: absolute;
+    inset: -10px -8px -4px;
+  }
+}
+
+/* peças antes inline no HTML */
+.mode-card-wrapper {
+  position: relative;
+}
+
+.mode-card-wrapper > .action-badge {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 3;
+}
+
+.scroll-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.scroll-card-row.is-spread {
+  justify-content: space-between;
+}
+
+.scroll-card-row.is-spread > .scroll-card-row {
+  width: auto;
+}
+
+.progress-pct-huge.is-word {
+  font-size: 28px;
+}
+
+.origin-hero-title.is-danger { color: var(--status-danger); }
+.origin-hero-title.is-warn { color: var(--status-loading); }
+
+.consent-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.consent-card input {
+  accent-color: #FFFFFF;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.consent-card label {
+  color: var(--text-primary);
+  cursor: pointer;
+}

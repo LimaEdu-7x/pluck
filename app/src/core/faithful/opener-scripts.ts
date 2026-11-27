@@ -4,7 +4,7 @@ export function generateReadmeText(siteTitle: string, siteUrl: string): string {
   return `========================================================================
 CLONE FIEL OFFLINE — ${siteTitle.toUpperCase()}
 Origem: ${siteUrl}
-Gerado com: Pluck v0.2.0 (Extrator Web 100% Local)
+Gerado com: Pluck v0.3.0 (Extrator Web 100% Local)
 ========================================================================
 
 COMO VISUALIZAR ESTE CLONE COM FIDELIDADE TOTAL:

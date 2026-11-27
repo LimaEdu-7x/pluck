@@ -9,7 +9,7 @@
 <body>
   <div class="side-panel-app" id="sidePanelRoot" role="region" aria-label="Pluck Painel Lateral">
     
-    <!-- TOP HEADER v12: Ícone + Nome Pluck + v0.2 esmaecido + Chip com bolinha centralizada -->
+    <!-- TOP HEADER v12: Ícone + Nome Pluck + versão esmaecida + Chip com bolinha centralizada -->
     <header class="panel-header" id="panelHeader">
       <div class="brand">
         <svg class="brand-icon" viewBox="0 0 256 256" width="18" height="18" fill="#FFFFFF" aria-hidden="true">
@@ -17,7 +17,7 @@
           <path d="M170 30H214A12 12 0 0 1 226 42V86A12 12 0 0 1 206 94L162 50A12 12 0 0 1 170 30Z"/>
         </svg>
         <span class="brand-name">Pluck</span>
-        <span class="brand-ver" id="brandTag">v0.2</span>
+        <span class="brand-ver" id="brandTag">v0.3</span>
       </div>
 
       <div class="site-chip" id="headerDomainPill" role="status" aria-label="Status da aba ativa">
@@ -74,11 +74,11 @@
               </div>
               <span class="mode-badge">ARQUIVO ÚNICO</span>
             </div>
-            <p class="mode-desc">1 arquivo leve (.html). Imagens e vídeos apontam direto para o site online.</p>
+            <p class="mode-desc">Um arquivo .html leve. Imagens e vídeos continuam no site, então precisa de internet.</p>
           </div>
 
           <!-- 3. Site inteiro -->
-          <div class="mode-card-wrapper" style="position: relative;">
+          <div class="mode-card-wrapper">
             <div class="card interactive mode-card" id="mode-site" role="radio" aria-checked="false" tabindex="-1">
               <div class="mode-header">
                 <div class="mode-left">
@@ -88,11 +88,11 @@
               </div>
               <p class="mode-desc">Segue links internos do site (padrão: até 20 páginas em 2 níveis).</p>
             </div>
-            <button type="button" class="mode-badge action-badge" id="btnConfigSite" aria-label="Opções do site inteiro" style="position: absolute; top: 12px; right: 14px; z-index: 3;">OPÇÕES →</button>
+            <button type="button" class="mode-badge action-badge" id="btnConfigSite" aria-label="Opções do site inteiro">OPÇÕES →</button>
           </div>
 
           <!-- 4. Somente mídias -->
-          <div class="mode-card-wrapper" style="position: relative;">
+          <div class="mode-card-wrapper">
             <div class="card interactive mode-card" id="mode-images" role="radio" aria-checked="false" tabindex="-1">
               <div class="mode-header">
                 <div class="mode-left">
@@ -102,7 +102,7 @@
               </div>
               <p class="mode-desc">Imagens, vídeos, áudios e vetores SVG em pastas separadas.</p>
             </div>
-            <button type="button" class="mode-badge action-badge" id="btnConfigMidias" aria-label="Filtros de mídias" style="position: absolute; top: 12px; right: 14px; z-index: 3;">FILTROS →</button>
+            <button type="button" class="mode-badge action-badge" id="btnConfigMidias" aria-label="Filtros de mídias">FILTROS →</button>
           </div>
 
           <div id="webglNotice" class="webgl-notice" role="status" style="display: none;">
@@ -144,10 +144,10 @@
 
       <!-- 2. TELA OPÇÕES (v12) -->
       <section class="view-state" id="view-opcoes" aria-label="Opções de Captura">
-        <div style="margin-bottom: 12px; position: relative; z-index: 2;">
+        <div class="state-head">
           <div class="badge badge-subtle options-detected-badge" id="optionsDetectedBadge">+ DETECTADO NA PÁGINA</div>
-          <h1 class="title-display" id="optionsViewTitle" style="margin-bottom: 3px;">Opções de Site inteiro</h1>
-          <p class="desc-text" id="optionsViewSub">Defina os limites de navegação para varrer as páginas internas.</p>
+          <h1 class="title-display" id="optionsViewTitle">Opções de Site inteiro</h1>
+          <p class="desc-text" id="optionsViewSub">Defina até onde o Pluck segue os links internos do site.</p>
         </div>
 
         <!-- 2.1 Subview Opções de Site Inteiro -->
@@ -174,7 +174,7 @@
           <div class="card options-card toggle-card">
             <div class="toggle-texts">
               <span class="act-title">Incluir subdomínios</span>
-              <span class="desc-text">Rastreia também blogs e apps do mesmo domínio</span>
+              <span class="desc-text">Segue também endereços como blog.site.com</span>
             </div>
             <div class="switch-track off" id="siteSubdomainsSwitch" role="switch" aria-checked="false" tabindex="0">
               <span class="switch-knob"></span>
@@ -205,7 +205,7 @@
                   <div class="custom-check checked" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5l10-10"/></svg></div>
                   <div>
                     <div class="act-title">Vetores SVG</div>
-                    <div class="media-sub">Ícones e ilustrações limpos</div>
+                    <div class="media-sub">Ícones e ilustrações</div>
                   </div>
                 </div>
                 <span class="folder-tag">/VETORES</span>
@@ -242,7 +242,7 @@
             <div class="chips-selector" id="mediaCountChips" role="radiogroup" aria-label="Quantidade máxima de mídias">
               <button type="button" class="chip-option" data-val="50" role="radio" aria-checked="false" tabindex="-1">50</button>
               <button type="button" class="chip-option" data-val="100" role="radio" aria-checked="false" tabindex="-1">100</button>
-              <button type="button" class="chip-option active" data-val="200" role="radio" aria-checked="true" tabindex="0">200 mídias</button>
+              <button type="button" class="chip-option active" data-val="200" role="radio" aria-checked="true" tabindex="0">200</button>
               <button type="button" class="chip-option" data-val="999" role="radio" aria-checked="false" tabindex="-1">Sem limite</button>
             </div>
           </div>
@@ -259,14 +259,14 @@
         </div>
 
         <!-- 2.3 Subview Opções de Rolagem Infinita -->
-        <div class="options-subview" id="subview-opcoes-rolagem" role="radiogroup" aria-label="Opções de rolagem" style="display: none; flex-direction: column; gap: 7px; margin-bottom: 12px; position: relative; z-index: 2;">
+        <div class="options-subview is-list" id="subview-opcoes-rolagem" role="radiogroup" aria-label="Opções de rolagem" style="display: none;">
           <div class="card interactive mode-card selected" id="scrollCardScreens" data-val="10" role="radio" aria-checked="true" tabindex="0">
-            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; width: 100%;">
-              <div style="display: flex; align-items: flex-start; gap: 8px;">
-                <div class="radio-circle active" style="margin-top: 2px;"><div class="radio-dot"></div></div>
+            <div class="scroll-card-row is-spread">
+              <div class="scroll-card-row">
+                <div class="radio-circle active"><div class="radio-dot"></div></div>
                 <div>
                   <div class="act-title">Rolar até 10 telas</div>
-                  <div class="desc-text" style="margin-top: 1px;">Ideal para a maioria dos sites, cobrindo os posts e seções principais.</div>
+                  <div class="desc-text">Ideal para a maioria dos sites, cobrindo os posts e seções principais.</div>
                 </div>
               </div>
               <span class="badge badge-subtle">PADRÃO</span>
@@ -274,21 +274,21 @@
           </div>
 
           <div class="card interactive mode-card" id="scrollCardTime" data-val="30" role="radio" aria-checked="false" tabindex="-1">
-            <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%;">
-              <div class="radio-circle" style="margin-top: 2px;"></div>
+            <div class="scroll-card-row">
+              <div class="radio-circle"></div>
               <div>
                 <div class="act-title">Rolar por tempo (30 segundos)</div>
-                <div class="desc-text" style="margin-top: 1px;">Continua rolando por 30 segundos e depois inicia o salvamento.</div>
+                <div class="desc-text">Continua rolando por 30 segundos e depois inicia o salvamento.</div>
               </div>
             </div>
           </div>
 
           <div class="card interactive mode-card" id="scrollCardUnlimited" data-val="999" role="radio" aria-checked="false" tabindex="-1">
-            <div style="display: flex; align-items: flex-start; gap: 8px; width: 100%;">
-              <div class="radio-circle" style="margin-top: 2px;"></div>
+            <div class="scroll-card-row">
+              <div class="radio-circle"></div>
               <div>
                 <div class="act-title">Sem limite (até o fim)</div>
-                <div class="desc-text" style="margin-top: 1px;">Rola até não haver mais conteúdo novo ou até você clicar em Parar.</div>
+                <div class="desc-text">Rola até não haver mais conteúdo novo ou até você clicar em Parar.</div>
               </div>
             </div>
           </div>
@@ -309,7 +309,7 @@
       <section class="view-state" id="view-baixando" aria-label="Progresso da Captura">
         <div class="progress-hero">
           <h1 class="progress-pct-huge" id="downPct">0%</h1>
-          <span class="progress-status-sub" id="downFile">Iniciando captura...</span>
+          <span class="progress-status-sub" id="downFile">Iniciando captura…</span>
         </div>
         <div id="downMilestoneAnnounce" class="sr-only" aria-live="polite"></div>
 
@@ -341,7 +341,7 @@
       <section class="view-state" id="view-rolando" aria-label="Rolagem automática da página">
         <div class="progress-hero">
           <h1 class="progress-pct-huge" id="scrollPct">0%</h1>
-          <span class="progress-status-sub" id="scrollStepNote">Rolando página para carregar conteúdo...</span>
+          <span class="progress-status-sub" id="scrollStepNote">Rolando a página para carregar o conteúdo…</span>
         </div>
 
         <div class="progress-bar-wrap">
@@ -367,8 +367,8 @@
       <!-- 3c. ANALISANDO VIEW (Compatível com v12) -->
       <section class="view-state" id="view-analisando" aria-label="Análise e mapeamento">
         <div class="progress-hero">
-          <h1 class="progress-pct-huge" style="font-size: 28px;">Varrendo</h1>
-          <span class="progress-status-sub" id="analisandoSummary">Mapeando páginas e recursos...</span>
+          <h1 class="progress-pct-huge is-word">Varrendo</h1>
+          <span class="progress-status-sub" id="analisandoSummary">Mapeando páginas e recursos…</span>
         </div>
         <div class="card metrics-card-v12">
           <div class="metrics-row-v12">
@@ -384,169 +384,150 @@
 
       <!-- 4. GRAVANDO VIEW (v12) -->
       <section class="view-state" id="view-gravando" aria-label="Gravação em andamento">
-        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
-          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 3px;">
+        <div class="state-head">
+          <div class="state-eyebrow is-danger">
             <div class="pulse-wrapper">
               <div class="ring-pulse-red"></div>
               <div class="dot-core-red"></div>
             </div>
-            <span class="type-special" style="font-size: 11px; color: #EF4444; letter-spacing: 0.08em;">GRAVAÇÃO ATIVA NA PÁGINA</span>
+            <span>GRAVAÇÃO ATIVA NA PÁGINA</span>
           </div>
-          <h1 class="title-display" style="margin-bottom: 3px;">Interaja com a página</h1>
-          <p class="desc-text">Navegue normalmente. Abra menus, clique em abas e interaja.</p>
+          <h1 class="title-display">Interaja com a página</h1>
+          <p class="desc-text">Abra menus, clique nas abas da própria página e role. O que aparecer entra na cópia.</p>
         </div>
 
         <!-- TIMER DE GRAVAÇÃO -->
-        <div style="padding: 18px 14px; border-radius: 3px; background: #101014; border: 1.5px solid rgba(239, 68, 68, 0.4); text-align: center; position: relative; z-index: 2; margin-bottom: 12px;">
-          <div class="type-special" style="font-size: 11px; color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 5px;">
-            TEMPO GRAVADO
-          </div>
-          <div class="type-special" style="font-size: 36px; font-weight: 700; color: #FFFFFF; line-height: 1;" id="gravandoTimer">
-            00:00
-          </div>
-          <div style="font-size: 13px; color: var(--text-secondary); margin-top: 8px;" id="gravandoInteracoes">
-            Interações e cliques capturados ao vivo
-          </div>
+        <div class="panel-card is-danger rec-timer">
+          <div class="section-label">TEMPO GRAVADO</div>
+          <div class="rec-timer-value" id="gravandoTimer">00:00</div>
+          <div class="card-text" id="gravandoInteracoes">Interações e cliques capturados ao vivo</div>
           <span id="gravandoTitle" style="display: none;"></span>
           <span id="gravandoUrl" style="display: none;"></span>
         </div>
 
-        <div style="padding: 9px 12px; border-radius: 3px; background: #18191E; border: 1px solid rgba(242, 241, 238, 0.14); position: relative; z-index: 2; margin-bottom: 10px;">
-          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.35;">
-            <strong style="color: #FFF;">Importante:</strong> A gravação funciona apenas dentro de <span class="type-special" style="color: #FFF;" id="gravandoScopeDomain">esta página</span>. Se trocar de endereço ou aba, a gravação será interrompida.
-          </div>
+        <div class="panel-inset is-muted">
+          <strong>Só nesta página:</strong> se você mudar de endereço ou de aba, a gravação para e você escolhe entre salvar o que já gravou ou recomeçar.<span id="gravandoScopeDomain" hidden></span>
         </div>
       </section>
 
       <!-- 4b. GRAVAÇÃO ERRO (v12) -->
       <section class="view-state" id="view-gravacao-erro" aria-label="Erro de navegação durante a gravação">
-        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
-          <div style="display: flex; align-items: center; gap: 6px; color: #EF4444; margin-bottom: 3px;">
-            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/></svg>
-            <span class="type-special" id="gravacaoErroSuper" style="font-size: 11px; letter-spacing: 0.08em;">PÁGINA ALTERADA</span>
+        <div class="state-head">
+          <div class="state-eyebrow is-danger">
+            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M5 19h14a2 2 0 0 0 1.84 -2.75l-7.1 -12.25a2 2 0 0 0 -3.5 0l-7.1 12.25a2 2 0 0 0 1.75 2.75"/></svg>
+            <span id="gravacaoErroSuper">PÁGINA ALTERADA</span>
           </div>
-          <h1 class="title-display" id="gravacaoErroTitle" style="margin-bottom: 4px;">Você saiu da página</h1>
+          <h1 class="title-display" id="gravacaoErroTitle">Você saiu da página</h1>
         </div>
 
         <!-- CARTÃO DE MENSAGEM DA SPEC -->
-        <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid rgba(239, 68, 68, 0.4); position: relative; z-index: 2; margin-bottom: 14px;">
-          <div style="font-size: 13.5px; color: #F2F1EE; line-height: 1.45; margin-bottom: 10px;" id="gravacaoErroMsg">
-            A gravação vale só para a página onde começou. Você saiu de <strong style="color: #FFFFFF; text-decoration: underline;" id="gravacaoErroOrigem">este endereço</strong> para outro endereço.
+        <div class="panel-card is-danger">
+          <div class="card-text is-strong" id="gravacaoErroMsg">
+            A gravação vale só para a página onde começou. Você saiu do <strong class="is-underlined" id="gravacaoErroOrigem">endereço original</strong> para outro.
           </div>
-          <div id="gravacaoErroPreservadaBox" style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px; display: none;">
-            <div class="type-special" id="gravacaoErroPreservadaLabel" style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Gravação preservada:</div>
-            <div style="font-family: var(--font-body); font-size: 13px; color: var(--text-primary); margin-top: 1px;" id="gravacaoErroPreservada">
-            </div>
+          <div class="panel-inset" id="gravacaoErroPreservadaBox" style="display: none;">
+            <div class="section-label" id="gravacaoErroPreservadaLabel">Gravação preservada:</div>
+            <div id="gravacaoErroPreservada"></div>
           </div>
         </div>
 
-        <div class="desc-text" style="font-size: 13px; margin-bottom: 10px; position: relative; z-index: 2;" id="gravacaoErroSub">
-          Escolha se deseja salvar o que já gravou antes de sair ou recomeçar a gravação na página original.
+        <div class="desc-text" id="gravacaoErroSub">
+          Salve o que já gravou ou recomece na página original.
         </div>
       </section>
 
       <!-- 5. TELA PRONTO (ZIP) (v12) -->
       <section class="view-state" id="view-pronto-zip" aria-label="Site Pronto">
-        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
-          <div style="display: flex; align-items: center; gap: 6px; color: #3ECF8E; margin-bottom: 3px;">
-            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>
-            <span class="type-special" style="font-size: 11px; letter-spacing: 0.08em;" id="prontoZipSuper">ARQUIVAMENTO CONCLUÍDO</span>
+        <div class="state-head">
+          <div class="state-eyebrow is-ready">
+            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5l10-10"/></svg>
+            <span id="prontoZipSuper">ARQUIVAMENTO CONCLUÍDO</span>
           </div>
-          <h1 class="title-display" style="margin-bottom: 3px;" id="prontoZipTitle">Página arquivada!</h1>
+          <h1 class="title-display" id="prontoZipTitle">Página arquivada!</h1>
           <p class="desc-text" id="prontoZipDesc">O arquivo ZIP foi gerado e está pronto para uso offline.</p>
         </div>
 
         <!-- CARTÃO DO ARQUIVO GERADO -->
-        <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid #FFFFFF; position: relative; z-index: 2; margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+        <div class="panel-card is-result">
+          <div class="card-head">
             <span class="act-title" id="prontoZipFilename">site.zip</span>
             <span class="badge badge-subtle" id="prontoZipBadge">CÓPIA FIEL</span>
           </div>
-          
-          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.35; margin-bottom: 8px;" id="prontoZipExpl">
-            Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.
+          <div class="ficha-stamp" id="prontoZipStamp"></div>
+          <div class="card-text" id="prontoZipExpl">Abre com dois cliques em qualquer navegador sem precisar de internet ou programas especiais.</div>
+          <div class="panel-inset">
+            <div><strong>Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.</div>
+            <div class="section-label" id="prontoZipMeta" style="display: none;"></div>
           </div>
-
-          <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
-            <div style="font-size: 13px; color: var(--text-primary); line-height: 1.35;">
-              <strong style="color: #FFF;">Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
-            </div>
-            <div class="type-special" id="prontoZipMeta" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: none;"></div>
-          </div>
-          <div id="prontoZipWarning" class="pronto-warning" style="margin-top: 8px; padding: 7px 10px; border-radius: 2px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); font-size: 13px; color: #F2F1EE; line-height: 1.35; display: none;"></div>
+          <div id="prontoZipWarning" class="pronto-warning panel-inset is-danger" style="display: none;"></div>
         </div>
       </section>
 
       <!-- 5b. TELA PRONTO (HTML) (v12) -->
       <section class="view-state" id="view-pronto-html" aria-label="HTML Pronto">
-        <div style="margin-bottom: 14px; position: relative; z-index: 2;">
-          <div style="display: flex; align-items: center; gap: 6px; color: #3ECF8E; margin-bottom: 3px;">
-            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg>
-            <span class="type-special" style="font-size: 11px; letter-spacing: 0.08em;" id="prontoHtmlSuper">ARQUIVAMENTO CONCLUÍDO</span>
+        <div class="state-head">
+          <div class="state-eyebrow is-ready">
+            <svg class="tabler-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12l5 5l10-10"/></svg>
+            <span id="prontoHtmlSuper">ARQUIVAMENTO CONCLUÍDO</span>
           </div>
-          <h1 class="title-display" style="margin-bottom: 3px;" id="prontoHtmlTitle">Página arquivada!</h1>
-          <p class="desc-text" id="prontoHtmlDesc">O arquivo HTML foi gerado e está pronto para uso offline.</p>
+          <h1 class="title-display" id="prontoHtmlTitle">Página arquivada!</h1>
+          <p class="desc-text" id="prontoHtmlDesc">O arquivo HTML foi gerado e já pode ser aberto.</p>
         </div>
 
-        <div style="padding: 14px; border-radius: 3px; background: #101014; border: 1.5px solid #FFFFFF; position: relative; z-index: 2; margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+        <div class="panel-card is-result">
+          <div class="card-head">
             <span class="act-title" id="prontoHtmlFilename">pagina.html</span>
             <span class="badge badge-subtle" id="prontoHtmlBadge">ARQUIVO ÚNICO</span>
           </div>
-          
-          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.35; margin-bottom: 8px;" id="prontoHtmlExpl">
-            Abre com dois cliques em qualquer navegador. As imagens são carregadas do site original, então precisa de internet.
-          </div>
-
-          <div style="background: #18191E; border: 1px solid rgba(242,241,238,0.12); padding: 7px 10px; border-radius: 2px;">
-            <div style="font-size: 13px; color: var(--text-primary); line-height: 1.35;">
-              <strong style="color: #FFF;">Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
-            </div>
+          <div class="ficha-stamp" id="prontoHtmlStamp"></div>
+          <div class="card-text" id="prontoHtmlExpl">Abre com dois cliques em qualquer navegador. As imagens são carregadas do site original, então precisa de internet.</div>
+          <div class="panel-inset">
+            <strong>Disponível nesta janela:</strong> O arquivo fica guardado enquanto o painel estiver aberto.
           </div>
           <span id="prontoHtmlMeta" style="display: none;"></span>
-          <div id="prontoHtmlWarning" class="pronto-warning" style="margin-top: 8px; padding: 7px 10px; border-radius: 2px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); font-size: 13px; color: #F2F1EE; line-height: 1.35; display: none;"></div>
+          <div id="prontoHtmlWarning" class="pronto-warning panel-inset is-danger" style="display: none;"></div>
         </div>
       </section>
 
       <!-- 6. ERRO VIEW -->
       <section class="view-state" id="view-erro" aria-label="Página incompatível">
         <div class="state-header">
-          <h1 class="origin-hero-title" id="erroTitle" style="color: var(--status-danger, #EF4444); font-size: 19px;">Página incompatível</h1>
-          <span class="desc-text" id="erroSub">Navegadores bloqueiam extensões em abas internas</span>
+          <h1 class="origin-hero-title is-danger" id="erroTitle">Esta página não pode ser arquivada</h1>
+          <span class="desc-text" id="erroSub">O navegador não deixa extensões lerem páginas internas, como configurações e lojas de extensões.</span>
         </div>
-        <div class="card" style="border-color: var(--status-danger, #EF4444); padding: 12px 14px;">
-          <p class="desc-text" id="erroProtocol">Selecione uma aba com página web comum (HTTP, HTTPS, file://)</p>
+        <div class="panel-card is-danger">
+          <p class="card-text" id="erroProtocol">Abra um site comum nesta aba (http, https ou um arquivo local) para arquivar.</p>
         </div>
       </section>
 
       <!-- 7. SEM ACESSO VIEW -->
       <section class="view-state" id="view-sem-acesso" aria-label="Sem acesso à aba">
         <div class="state-header">
-          <h1 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Identificação da aba oculta</h1>
-          <span class="desc-text" id="semAcessoDetail">Conceda permissão no navegador para identificar esta aba</span>
+          <h1 class="origin-hero-title is-warn">Endereço da aba oculto</h1>
+          <span class="desc-text" id="semAcessoDetail">O navegador não informou o endereço desta aba ao Pluck.</span>
         </div>
       </section>
 
       <!-- 8. PERMISSÃO VIEW -->
       <section class="view-state" id="view-permissao" aria-label="Permissão necessária">
         <div class="state-header">
-          <h1 class="origin-hero-title" style="font-size: 19px;">Permissão de Domínio</h1>
-          <span class="desc-text" id="permScopeText">Rotas sob este domínio</span>
+          <h1 class="origin-hero-title">Permissão necessária</h1>
+          <span class="desc-text" id="permScopeText">Para o modo Site inteiro</span>
         </div>
-        <div class="card" style="padding: 12px 14px;">
-          <p class="desc-text">Para rastrear páginas vinculadas neste domínio (<strong id="permDomain">este domínio</strong>), o Pluck precisa de autorização local.</p>
+        <div class="panel-card">
+          <p class="card-text">Para seguir os links internos de <strong id="permDomain">este domínio</strong>, o navegador precisa liberar o acesso do Pluck a ele. Nada sai do seu navegador.</p>
         </div>
       </section>
 
       <!-- 9. LOGIN VIEW -->
       <section class="view-state" id="view-login" aria-label="Página com login">
         <div class="state-header">
-          <h1 class="origin-hero-title" style="color: var(--status-loading, #F59E0B); font-size: 19px;">Área com login</h1>
-          <span class="desc-text">Campos de senha e credenciais são descartados automaticamente</span>
+          <h1 class="origin-hero-title is-warn">Área com login</h1>
+          <span class="desc-text">O Pluck apaga senhas e dados de formulário antes de salvar.</span>
         </div>
-        <div class="card" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px;">
-          <input type="checkbox" id="consentCheck" checked style="accent-color: #FFFFFF; width: 16px; height: 16px;">
-          <label for="consentCheck" class="desc-text" style="color: #FFFFFF; cursor: pointer;">Estou ciente e autorizo o salvamento do conteúdo visível.</label>
+        <div class="card consent-card">
+          <input type="checkbox" id="consentCheck" checked>
+          <label for="consentCheck" class="desc-text">Estou ciente e autorizo o salvamento do conteúdo visível.</label>
         </div>
       </section>
 

@@ -137,10 +137,4 @@ body.theme-dark {
   --err-border: #EF4444;
 }
 
-/* Reduced Motion */
-@media (prefers-reduced-motion: reduce) {
-  * {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-  }
-}
+/* Movimento reduzido: tratado por componente em style.css (loops param, entradas viram só opacidade) */
