@@ -37,6 +37,8 @@ export interface FaithfulCaptureOptions {
   shouldStop?: () => boolean;        // SPEC-v12: Parar e salvar o que já foi capturado
   signal?: AbortSignal;              // AbortSignal para parada
   onProgress?: (loaded: number, total: number, currentItem?: string) => void;
+  /** Páginas do site: concluídas e total de páginas aceitas no escopo até o momento (concluídas <= total) */
+  onPages?: (done: number, total: number) => void;
 }
 
 export interface FaithfulCaptureStats {
@@ -53,6 +55,8 @@ export interface FaithfulCaptureWarnings {
   failedPages?: number;  // Site inteiro: páginas com HTTP >= 400 ou erro de rede
   totalPages?: number;   // Site inteiro: páginas tentadas (inclui a principal)
   networkLost?: boolean; // a rede caiu durante o crawl
+  limitReached?: 'bytes' | 'files'; // teto atingido: o pacote foi cortado (aviso, nunca silêncio)
+  skippedAssets?: number;          // itens que ficaram de fora do ZIP por causa do teto
 }
 
 export interface FaithfulCaptureResult {

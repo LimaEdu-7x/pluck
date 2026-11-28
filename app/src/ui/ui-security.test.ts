@@ -64,7 +64,7 @@ describe('Auditoria de Segurança MV3: CSP, Memória e Ciclo de Vida da Janela',
     const raw = fs.readFileSync(manifestPath, 'utf-8');
     const manifest = JSON.parse(raw);
 
-    expect(manifest.version).toBe('0.7.1');
+    expect(manifest.version).toBe('0.8.0');
     expect(manifest.content_security_policy).toBeDefined();
     expect(manifest.content_security_policy.extension_pages).toBeDefined();
 

@@ -268,5 +268,160 @@ describe('SPEC-v12 Partes 5 a 7: Gravação na Página Atual, Baixar Novamente e
       expect((window as any).__pluck.getState()).toBe('inicio');
       expect((window as any).__pluck.getLastDownload()).toBeNull();
     });
+
+    it('quando chrome.downloads reporta interrupted, estado vai para erro com Tentar de novo e Voltar (não vira pronto)', async () => {
+      (chrome.downloads as any).__manualEvents = true;
+
+      let listenerCallback: any = null;
+      (chrome.downloads.onChanged.addListener as any).mockImplementation((cb: any) => {
+        listenerCallback = cb;
+      });
+
+      const capturePromise = (window as any).__pluck.finishRecordingCapture([
+        {
+          url: 'https://exemplo.com/app.js',
+          mimeType: 'application/javascript',
+          statusCode: 200,
+          data: new TextEncoder().encode('console.log("hello");')
+        }
+      ]);
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(listenerCallback).toBeTypeOf('function');
+
+      listenerCallback({
+        id: 101,
+        state: { current: 'interrupted' },
+        error: { current: 'SERVER_BAD_CONTENT' }
+      });
+
+      await capturePromise;
+
+      expect((window as any).__pluck.getState()).toBe('erro');
+      expect((window as any).__pluck.getState()).not.toBe('pronto');
+
+      const errSub = document.getElementById('erroSub');
+      const errProto = document.getElementById('erroProtocol');
+      expect((errSub?.textContent || '') + (errProto?.textContent || '')).toContain('SERVER_BAD_CONTENT');
+
+      const btnRetry = document.getElementById('btnRetryCapture');
+      const btnBack = document.getElementById('btnBackToStart');
+      expect(btnRetry).not.toBeNull();
+      expect(btnRetry?.textContent).toBe('Tentar de novo');
+      expect(btnBack).not.toBeNull();
+      expect(btnBack?.textContent).toBe('Voltar');
+
+      delete (chrome.downloads as any).__manualEvents;
+    });
+
+    it('quando downloadId vier vazio, trata como erro e não vai para pronto', async () => {
+      (chrome.downloads.download as any).mockResolvedValueOnce(undefined);
+
+      await (window as any).__pluck.finishRecordingCapture([
+        {
+          url: 'https://exemplo.com/app.js',
+          mimeType: 'application/javascript',
+          statusCode: 200,
+          data: new TextEncoder().encode('console.log("hello");')
+        }
+      ]);
+
+      expect((window as any).__pluck.getState()).toBe('erro');
+      expect((window as any).__pluck.getState()).not.toBe('pronto');
+
+      const btnRetry = document.getElementById('btnRetryCapture');
+      const btnBack = document.getElementById('btnBackToStart');
+      expect(btnRetry).not.toBeNull();
+      expect(btnBack).not.toBeNull();
+    });
+
+    it('cronometro de tempo decorrido inicia e atualiza a cada segundo', async () => {
+      vi.useFakeTimers();
+      (window as any).__pluck.startLiveCaptureTimer();
+      const cntTime = document.getElementById('cntTime');
+      expect(cntTime?.textContent).toBe('00:00');
+
+      vi.advanceTimersByTime(2000);
+      expect(cntTime?.textContent).toBe('00:02');
+
+      vi.advanceTimersByTime(65000);
+      expect(cntTime?.textContent).toBe('01:07');
+
+      (window as any).__pluck.stopLiveCaptureTimer();
+      vi.useRealTimers();
+    });
+
+    it('contador de paginas exibe dado real do motor sem clamp de 12 e oculta se concluido > total', () => {
+      const cntPages = document.getElementById('cntPages');
+      const row = cntPages?.closest('.metrics-row-v12') as HTMLElement;
+
+      // 1. Motor envia 15 de 20 páginas (acima de 12, sem clamp)
+      setState('baixando', { pagesDone: 15, pagesTotal: 20, pct: 75 });
+      expect(row.style.display).toBe('flex');
+      expect(cntPages?.textContent).toBe('15 de 20');
+
+      // 2. Motor envia concluído > total (ex: 25 de 20) -> deve ocultar a linha
+      setState('baixando', { pagesDone: 25, pagesTotal: 20, pct: 100 });
+      expect(row.style.display).toBe('none');
+      expect(cntPages?.textContent).toBe('');
+
+      // 3. Sem dado de páginas -> linha oculta
+      setState('baixando', { pct: 50, pagesDone: null, pagesTotal: null });
+      expect(row.style.display).toBe('none');
+      expect(cntPages?.textContent).toBe('');
+    });
+
+    it('percentuais e etapas reais (captura 0-70%, montagem 70-90%, entrega 90-100%)', () => {
+      const downPct = document.getElementById('downPct');
+      const downFill = document.getElementById('downFill');
+
+      // 1. Etapa de captura (recursos 50/100 -> 35%)
+      const capturePct = Math.round((50 / 100) * 70);
+      setState('baixando', { pct: capturePct, loaded: 50, total: 100, currentItem: 'Coletando recursos via CDP...' });
+      expect(downPct?.textContent).toBe('35% CONCLUÍDO');
+      expect(downFill?.style.width).toBe('35%');
+
+      // 2. Etapa de montagem (compactando arquivos no ZIP: 50/100 -> 70 + 10 = 80%)
+      const zipPct = 70 + Math.round((50 / 100) * 20);
+      setState('baixando', { pct: zipPct, loaded: 50, total: 100, currentItem: 'Montando ZIP: 50/100 arquivos' });
+      expect(downPct?.textContent).toBe('80% CONCLUÍDO');
+      expect(downFill?.style.width).toBe('80%');
+
+      // 3. Etapa de entrega no disco (gravando arquivo: 95%)
+      setState('baixando', { pct: 95, currentItem: 'Gravando arquivo no disco…' });
+      expect(downPct?.textContent).toBe('95% CONCLUÍDO');
+      expect(downFill?.style.width).toBe('95%');
+
+      // 4. Download finalizado (100%)
+      setState('baixando', { pct: 100, currentItem: 'Download concluído' });
+      expect(downPct?.textContent).toBe('100% CONCLUÍDO');
+      expect(downFill?.style.width).toBe('100%');
+    });
+
+    it('Recursos exibe 247 de 247 vindo do motor e Volume transferido oculta sem dado real', () => {
+      const cntRes = document.getElementById('cntRes');
+      const resRow = cntRes?.closest('.metrics-row-v12') as HTMLElement;
+      const cntMb = document.getElementById('cntMb');
+      const mbRow = cntMb?.closest('.metrics-row-v12') as HTMLElement;
+
+      // 1. Motor envia 247 de 247 recursos
+      setState('baixando', { loaded: 247, total: 247, pct: 70 });
+      expect(resRow.style.display).toBe('flex');
+      expect(cntRes?.textContent).toBe('247 de 247');
+      // Volume transferido não foi enviado -> linha deve ficar oculta (sem fake 0,0 ou estMb)
+      expect(mbRow.style.display).toBe('none');
+      expect(cntMb?.textContent).toBe('');
+
+      // 2. Quando o blob real é entregue com tamanho real
+      setState('baixando', { loaded: 247, total: 247, mb: '14,2 MB', pct: 95 });
+      expect(mbRow.style.display).toBe('flex');
+      expect(cntMb?.textContent).toBe('14,2 MB');
+
+      // 3. Sem recursos (total = 0 ou undefined) -> linha oculta
+      setState('baixando', { pct: 10 });
+      expect(resRow.style.display).toBe('none');
+      expect(cntRes?.textContent).toBe('');
+    });
   });
 });
