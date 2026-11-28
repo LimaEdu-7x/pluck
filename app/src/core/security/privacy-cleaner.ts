@@ -35,6 +35,23 @@ export const SENSITIVE_PARAM_NAMES = new Set([
   'client_secret'
 ]);
 
+/** URLs de extensões do navegador (chrome-extension://, moz-extension://...) nunca entram na cópia. */
+export function isBrowserExtensionUrl(urlStr: string): boolean {
+  return /^(chrome|moz|safari-web|ms-browser)-extension:/i.test((urlStr || '').trim());
+}
+
+/** Converte entidades HTML de atributos (&amp; etc.) para o caractere real, antes de normalizar uma URL. */
+export function decodeHtmlEntities(str: string): string {
+  if (!str || str.indexOf('&') < 0) return str;
+  return str
+    .replace(/&amp;/gi, '&')
+    .replace(/&#38;|&#x26;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&#x27;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
 /**
  * Remove parâmetros sensíveis (tokens, sessões, chaves, senhas) de uma URL.
  * Suporta tanto URLs absolutas (http/https) quanto caminhos relativos (/rota?token=...).
@@ -57,6 +74,11 @@ export function cleanUrlTokens(urlStr: string, base: string = 'http://localhost'
     const isRelative = !trimmed.includes('://') && !trimmed.startsWith('//');
     const parsed = new URL(trimmed, base);
 
+    // t= e r= (token/regiao) de dominio de terceiro: so cortados fora da origem da pagina, para nao mexer no site
+    let baseOrigin = '';
+    try { baseOrigin = new URL(base).origin; } catch {}
+    const isThirdParty = !!baseOrigin && parsed.origin !== baseOrigin;
+
     let modified = false;
     for (const key of Array.from(parsed.searchParams.keys())) {
       const lower = key.toLowerCase();
@@ -65,7 +87,8 @@ export function cleanUrlTokens(urlStr: string, base: string = 'http://localhost'
         lower.includes('token') ||
         lower.includes('session') ||
         lower.includes('auth') ||
-        lower.includes('secret')
+        lower.includes('secret') ||
+        (isThirdParty && (lower === 't' || lower === 'r'))
       ) {
         parsed.searchParams.delete(key);
         modified = true;

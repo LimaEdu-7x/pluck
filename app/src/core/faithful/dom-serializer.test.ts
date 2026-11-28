@@ -79,4 +79,29 @@ describe('DOM Serializer & SPA Skeleton Detector', () => {
     const serialized = serializeLiveDom(imgContainer);
     expect(serialized).toContain('src="https://i.ytimg.com/vi/lazy123/hqdefault.jpg"');
   });
+
+  it('captura do painel: congela o modo HTML, troca canvas por imagem e restaura o DOM', () => {
+    document.body.innerHTML = `
+      <div data-reveal style="opacity: 0"><canvas width="100" height="100"></canvas></div>
+    `;
+    const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+    const snap = 'data:image/png;base64,' + 'A'.repeat(120);
+
+    const html = serializeLiveDom(null, { capture: { freeze: true, canvasSnapshots: [{ index: 0, dataUrl: snap }] } });
+
+    expect(html).toContain('data-pluck-canvas-img="true"');
+    expect(html).toContain(snap);
+    expect(html).toContain('opacity: 1');
+    expect(html).not.toContain('opacity: 0');
+    // o DOM vivo volta como estava: sem a imagem criada e o canvas visível de novo
+    expect(document.querySelector('[data-pluck-canvas-img]')).toBeNull();
+    expect(canvas.style.display).toBe('');
+  });
+
+  it('captura sem freeze serializa como antes (sem trocar canvas)', () => {
+    document.body.innerHTML = '<div><canvas width="100" height="100"></canvas></div>';
+    const html = serializeLiveDom(null, { capture: { freeze: false } });
+    expect(html).not.toContain('data-pluck-canvas-img');
+    expect(html).toContain('<canvas');
+  });
 });

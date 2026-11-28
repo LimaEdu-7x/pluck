@@ -19,6 +19,20 @@ export function generateReplayShim(urlMap: Record<string, string>): string {
   'use strict';
   const URL_MAP = ${serializedMap};
 
+  // 0. Quebra de loop de redirecionamento: mais de 5 cargas de pagina do site em 10 s para o replay.
+  // Medido no Edge: o loop e de cargas completas em "/" (a navegacao para /login e abortada antes de comitar).
+  // shortcut: so corta e mostra aviso; nao recupera sessao nem finge login
+  try {
+    const now = Date.now();
+    const loads = JSON.parse(sessionStorage.getItem('pluck-doc-loads') || '[]').filter((t) => now - t < 10000);
+    loads.push(now);
+    sessionStorage.setItem('pluck-doc-loads', JSON.stringify(loads));
+    if (loads.length > 5) {
+      window.stop();
+      document.documentElement.innerHTML = '<head><meta charset="utf-8"><title>Redirecionamento interrompido</title></head><body style="font-family:sans-serif;padding:32px"><h1>Redirecionamento interrompido</h1><p>A copia offline nao tem sessao e o app recarregou a pagina varias vezes em seguida. Feche esta aba e abra a copia de novo.</p></body>';
+    }
+  } catch (e) {}
+
   // Stubs globais para telemetria/analytics para evitar erros em runtime
   try {
     window.dataLayer = window.dataLayer || [];

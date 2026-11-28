@@ -47,8 +47,8 @@ export function isSensitiveResource(url: string, mimeType: string): boolean {
 }
 
 // [FIEL-04] Remove tokens e parâmetros sensíveis de URLs gravadas em disco/mapas
-export function sanitizeUrlForStorage(urlStr: string): string {
-  return cleanUrlTokens(urlStr);
+export function sanitizeUrlForStorage(urlStr: string, pageUrl?: string): string {
+  return cleanUrlTokens(urlStr, pageUrl);
 }
 
 export interface PendingCdpResponse {
@@ -193,9 +193,12 @@ export class CdpNetworkRecorder {
   }
 
   public async collectResources(
-    onProgress?: (loaded: number, total: number, item?: string) => void
+    onProgress?: (loaded: number, total: number, item?: string) => void,
+    limits?: { maxBytes?: number }
   ): Promise<CapturedResource[]> {
     this.throwIfDetached();
+    // Teto de bytes = limite escolhido pelo usuário (fallback: constante); antes era fixo em 150 MB
+    const byteCap = limits?.maxBytes ?? MAX_CDP_BYTES;
     if (!this.attached || typeof chrome === 'undefined' || !chrome.debugger) {
       return [];
     }
@@ -224,7 +227,7 @@ export class CdpNetworkRecorder {
       }
 
       // [FIEL-06] Teto global de contagem e bytes
-      if (results.length >= MAX_CDP_RESOURCES || totalBytesSoFar >= MAX_CDP_BYTES) {
+      if (results.length >= MAX_CDP_RESOURCES || totalBytesSoFar >= byteCap) {
         console.warn(
           `[CDP Recorder] Limite de segurança atingido (${results.length} recursos, ${totalBytesSoFar} bytes). Interrompendo coleta.`
         );
@@ -289,7 +292,7 @@ export class CdpNetworkRecorder {
         for (const res of resources) {
           if (!res.url || res.url.startsWith('data:') || collectedUrls.has(res.url)) continue;
           if (isSensitiveResource(res.url, res.mimeType)) continue;
-          if (results.length >= MAX_CDP_RESOURCES || totalBytesSoFar >= MAX_CDP_BYTES) break;
+          if (results.length >= MAX_CDP_RESOURCES || totalBytesSoFar >= byteCap) break;
 
           try {
             const contentRes: any = await this.send(

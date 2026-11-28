@@ -1,6 +1,7 @@
 // Orquestrador do Motor de Captura Fiel (CDP + Autoscroll + Reescrita + ZIP)
 
-import { zipSync } from 'fflate';
+import { zipFilesProgressive } from '../zip/progressive-zip';
+import { decodeHtmlEntities, isBrowserExtensionUrl } from '../security/privacy-cleaner';
 import { FaithfulCaptureOptions, FaithfulCaptureResult, CapturedResource, FaithfulCaptureWarnings } from './types';
 import { watchTargetTab } from './tab-guard';
 import { CdpNetworkRecorder, isDebuggerDetachedError, sanitizeUrlForStorage, MAX_CDP_RESOURCES, MAX_CDP_BYTES } from './cdp-recorder';
@@ -32,6 +33,9 @@ export async function captureFaithfulSite(
   const pageTitle = options.title || 'Site Fiel';
   const mode = options.mode || 'page';
   const autoscrollEnabled = options.autoscroll !== false;
+  // Teto de bytes = limite escolhido pelo usuário (antes o motor cortava em 150 MB, mesmo com 500 MB escolhidos)
+  const byteCap = options.limits?.maxBytes || MAX_CDP_BYTES;
+  let capReached: 'bytes' | 'files' | undefined;
 
   let recorder: CdpNetworkRecorder | null = null;
   const files: Record<string, Uint8Array> = {};
@@ -78,32 +82,37 @@ export async function captureFaithfulSite(
 
     // 2. Executa autoscroll se habilitado
     if (autoscrollEnabled && !guard?.reason) {
-      if (options.onProgress) {
-        options.onProgress(0, 100, 'Executando autoscroll e ativando animações...');
-      }
-
       const scrollOpts = {
         step: 400,
         intervalMs: 150,
         ...(options.autoscrollOptions || {})
       };
 
+      // A rolagem roda dentro da página: o progresso só existe ao terminar. Emite o valor real
+      // (px rolados de fato sobre a altura da página), nunca um percentual fixo.
+      let scrollResult: { totalScrolled?: number; finalHeight?: number } | null = null;
       if (tabId && typeof chrome !== 'undefined' && chrome.scripting) {
         try {
-          await chrome.scripting.executeScript({
+          const [injected] = await chrome.scripting.executeScript({
             target: { tabId },
             func: performAutoscroll,
             args: [scrollOpts]
           });
+          scrollResult = (injected?.result as any) || null;
         } catch {
           if (recorder) {
             try {
-              await recorder.evaluate(`(${performAutoscroll.toString()})(${JSON.stringify(scrollOpts)})`);
+              scrollResult = ((await recorder.evaluate(`(${performAutoscroll.toString()})(${JSON.stringify(scrollOpts)})`)) as any) || null;
             } catch (err) {
               if (!detachIsInterruption(err) && isDebuggerDetachedError(err)) throw err;
             }
           }
         }
+      }
+      if (options.onProgress && scrollResult && typeof scrollResult.totalScrolled === 'number') {
+        const scrolled = scrollResult.totalScrolled;
+        const height = Math.max(scrollResult.finalHeight || 0, scrolled);
+        options.onProgress(scrolled, height, `Rolagem concluída: ${Math.round(scrolled)} px de ${Math.round(height)} px`);
       }
     }
 
@@ -158,15 +167,13 @@ export async function captureFaithfulSite(
       mainStatus = recorder.getDocumentStatus(pageUrl);
     }
     if (recorder && guard?.reason !== 'tab_closed') {
-      if (options.onProgress) {
-        options.onProgress(50, 100, 'Coletando recursos de rede via CDP...');
-      }
+      // Sem marcador fixo: o progresso da coleta vem dos recursos de fato (carregados/total) abaixo
       try {
         const cdpResources = await recorder.collectResources((loaded, total, item) => {
           if (options.onProgress) {
             options.onProgress(loaded, total, item);
           }
-        });
+        }, { maxBytes: byteCap });
         capturedResources.push(...cdpResources);
       } catch (err) {
         if (!detachIsInterruption(err)) throw err;
@@ -205,7 +212,7 @@ export async function captureFaithfulSite(
       files,
       {
         maxResources: MAX_CDP_RESOURCES,
-        maxBytes: MAX_CDP_BYTES,
+        maxBytes: byteCap,
         currentTotalBytes: totalBytes
       }
     );
@@ -224,7 +231,7 @@ export async function captureFaithfulSite(
           files,
           {
             maxResources: MAX_CDP_RESOURCES,
-            maxBytes: MAX_CDP_BYTES,
+            maxBytes: byteCap,
             currentTotalBytes: totalBytes
           }
         );
@@ -265,7 +272,7 @@ export async function captureFaithfulSite(
         files,
         {
           maxResources: MAX_CDP_RESOURCES,
-          maxBytes: MAX_CDP_BYTES,
+          maxBytes: byteCap,
           currentTotalBytes: totalBytes
         }
       );
@@ -275,6 +282,24 @@ export async function captureFaithfulSite(
 
     // 6. Sessão de Crawler (se modo linked ou site)
     const crawlSession = createCrawlSession(pageUrl, options.limits);
+
+    // Progresso de páginas: a fila processa uma página por vez, então "concluídas" é exato.
+    // A raiz já foi capturada da aba (conta 1). total = páginas aceitas no escopo até agora (raiz + visitadas + na fila).
+    let pagesFinished = 1;
+    let pageInFlight = false;
+    const finishInFlight = () => {
+      if (pageInFlight) {
+        pagesFinished++;
+        pageInFlight = false;
+      }
+    };
+    const emitPages = (finalRun = false) => {
+      if (!options.onPages) return;
+      const accepted = new Set<string>([pageUrl, ...crawlSession.visitedUrls, ...crawlSession.queuedUrls.map((q) => q.url)]);
+      const total = finalRun ? pagesFinished : accepted.size;
+      options.onPages(pagesFinished, total);
+    };
+
     if (mode === 'linked' || mode === 'site') {
       const initialLinks = extractCrawlLinks(mainHtml, pageUrl, crawlSession);
       enqueueDiscoveredLinks(crawlSession, initialLinks, 0);
@@ -285,6 +310,9 @@ export async function captureFaithfulSite(
       guard?.onInterrupted(() => crawlAbort.abort());
 
       while (crawlSession.queuedUrls.length > 0 && !crawlSession.isFinished) {
+        // A página anterior terminou (qualquer caminho, inclusive continue/break)
+        finishInFlight();
+        emitPages();
         // Checa parada geral solicitada pelo usuário ("Parar e salvar")
         if ((options.shouldStop && options.shouldStop()) || options.signal?.aborted || guard?.reason) {
           crawlSession.isFinished = true;
@@ -308,13 +336,15 @@ export async function captureFaithfulSite(
         }
 
         crawlSession.visitedUrls.add(next.url);
+        // A raiz volta à fila do crawler, mas já foi capturada da aba: não conta de novo
+        const isRootRefetch = next.url === crawlSession.rootUrl;
+        pageInFlight = !isRootRefetch;
+        emitPages();
         const subPageZip = mapUrlToZipPath(next.url, pageUrl);
         if (!subPageZip) continue;
 
         urlToZipMap.set(next.url, subPageZip);
-        pagesCount++;
-        // A raiz volta à fila do crawler, mas já foi capturada da aba: não entra nos avisos
-        const isRootRefetch = next.url === crawlSession.rootUrl;
+        if (!isRootRefetch) pagesCount++;
         if (!isRootRefetch) attemptedSubpages++;
 
         let actualSubPageZip = subPageZip;
@@ -368,7 +398,7 @@ export async function captureFaithfulSite(
               files,
               {
                 maxResources: MAX_CDP_RESOURCES,
-                maxBytes: MAX_CDP_BYTES,
+                maxBytes: byteCap,
                 currentTotalBytes: totalBytes
               }
             );
@@ -396,6 +426,9 @@ export async function captureFaithfulSite(
         }
       }
     }
+    // Fim do crawl (ou página única): total final = páginas realmente capturadas
+    finishInFlight();
+    emitPages(true);
 
     // 7. Processa e adiciona recursos ao ZIP
     for (const res of capturedResources) {
@@ -409,8 +442,9 @@ export async function captureFaithfulSite(
       if (!zipPath) continue;
 
       // [FIEL-06] Teto global de arquivos e bytes acumulados no ZIP
-      if (Object.keys(files).length >= MAX_CDP_RESOURCES || totalBytes >= MAX_CDP_BYTES) {
+      if (Object.keys(files).length >= MAX_CDP_RESOURCES || totalBytes >= byteCap) {
         console.warn('[Faithful Engine] Teto global de arquivos/tamanho atingido.');
+        capReached = totalBytes >= byteCap ? 'bytes' : 'files';
         break;
       }
 
@@ -510,12 +544,25 @@ export async function captureFaithfulSite(
     totalBytes += fallbackBytes.byteLength;
 
     // 8.1. Grava urlmap.json com todas as URLs capturadas pelo CDP higienizadas (FIEL-04)
+    // Só entram URLs da própria cópia: mesma origem da página, ou citadas no HTML/CSS capturado (B4 b)
+    const referencedText = Object.entries(files)
+      .filter(([name]) => /\.(html?|css)$/i.test(name))
+      .map(([, bytes]) => decodeHtmlEntities(new TextDecoder().decode(bytes)))
+      .join('\n');
+    const pageOrigin = (() => { try { return new URL(pageUrl).origin; } catch { return ''; } })();
     const urlMapJsonObj: Record<string, string> = {};
+    let skippedAssets = 0;
     for (const [rawUrl, targetZip] of urlToZipMap.entries()) {
-      if (!rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:') && targetZip) {
-        const cleanUrl = sanitizeUrlForStorage(rawUrl);
-        urlMapJsonObj[cleanUrl] = targetZip;
-      }
+      if (rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || !targetZip) continue;
+      if (isBrowserExtensionUrl(rawUrl)) continue;
+      // Só entra no mapa o que foi de fato gravado no ZIP (B1: antes o mapa listava itens cortados pelo teto)
+      if (!files[targetZip]) { skippedAssets++; continue; }
+      const decoded = decodeHtmlEntities(rawUrl);
+      const cleanUrl = sanitizeUrlForStorage(decoded, pageUrl);
+      let sameOrigin = false;
+      try { sameOrigin = new URL(cleanUrl, pageUrl).origin === pageOrigin; } catch {}
+      if (!sameOrigin && !referencedText.includes(cleanUrl) && !referencedText.includes(decoded)) continue;
+      urlMapJsonObj[cleanUrl] = targetZip;
     }
     const urlMapBytes = new TextEncoder().encode(JSON.stringify(urlMapJsonObj, null, 2));
     files['urlmap.json'] = urlMapBytes;
@@ -529,11 +576,15 @@ export async function captureFaithfulSite(
 
     // 10. Gera o arquivo ZIP final (nunca entrega ZIP de captura cuja depuração caiu no meio)
     if (!guard?.reason) recorder?.throwIfDetached();
-    const zipData = zipSync(files, { level: 6 });
+    const zipData = zipFilesProgressive(files, (written, total, name) => {
+      options.onProgress?.(written, total, `Montando ZIP: ${written}/${total} arquivos (${name})`);
+    });
     const blob = new Blob([zipData], { type: 'application/zip' });
     const cleanName = safePath(pageTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'));
 
     const warnings: FaithfulCaptureWarnings = {};
+    if (capReached) warnings.limitReached = capReached;
+    if (skippedAssets > 0) warnings.skippedAssets = skippedAssets;
     if (mainStatus !== undefined && mainStatus >= 400) warnings.mainStatus = mainStatus;
     if (failedPages > 0 || networkLost) {
       warnings.failedPages = failedPages;

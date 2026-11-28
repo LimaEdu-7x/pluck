@@ -1,7 +1,7 @@
 import { safePath } from '../security/safe-path';
 import { generateReplayShim } from './replay-shim';
 import { isLocalhostPage, isPrivateIpOrHost } from '../security/url-guard';
-import { cleanFormValues, cleanAllElementUrlTokens, cleanUrlTokens } from '../security/privacy-cleaner';
+import { cleanFormValues, cleanAllElementUrlTokens, cleanUrlTokens, isBrowserExtensionUrl, decodeHtmlEntities } from '../security/privacy-cleaner';
 
 export const BLOCKED_IMAGE_DATA =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
@@ -15,7 +15,10 @@ export interface PathMapping {
 }
 
 // Mapeia URL para caminho no ZIP, isolando CDNs em _external/<host>/
-export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
+export function mapUrlToZipPath(urlStrRaw: string, basePageUrl: string): string {
+  // Extensões do navegador nunca entram na cópia; &amp; de atributo vira & antes de normalizar
+  if (isBrowserExtensionUrl(urlStrRaw)) return '';
+  const urlStr = decodeHtmlEntities(urlStrRaw);
   try {
     const cleanedUrlStr = cleanUrlTokens(urlStr, basePageUrl);
     const isBaseLocal = isLocalhostPage(basePageUrl);
@@ -70,7 +73,7 @@ export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
 
     // Trata query string adicionando hash leve para evitar colisões
     if (url.search) {
-      const qHash = Math.abs(hashCode(url.search)).toString(16).slice(0, 6);
+      const qHash = queryHashHex(url.search);
       const extMatch = cleanPath.match(/(\.[a-zA-Z0-9]{1,8})$/);
       if (extMatch) {
         cleanPath = cleanPath.replace(extMatch[1], `.${qHash}${extMatch[1]}`);
@@ -99,13 +102,15 @@ export function mapUrlToZipPath(urlStr: string, basePageUrl: string): string {
   }
 }
 
-function hashCode(str: string): number {
-  let hash = 0;
+// FNV-1a de 32 bits, 8 dígitos hex completos. (Antes: 6 primeiros dígitos do hash com sinal: URLs
+// que diferem só no final colidiam, e 40 respostas ?_rsc=... caíam em 2 arquivos.)
+function queryHashHex(str: string): string {
+  let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
   }
-  return hash;
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 // Calcula caminho relativo seguro de um arquivo (fromZipPath) para outro (toZipPath)
@@ -405,15 +410,24 @@ export function injectFaithfulCsp(doc: Document): void {
 export function injectFetchInterceptor(
   doc: Document,
   currentZipPath: string,
-  urlToZipMap: Map<string, string>
+  urlToZipMap: Map<string, string>,
+  pageUrl = ''
 ): void {
+  // Mesmo filtro do urlmap.json (B4): sem extensão do navegador, sem token, e só o que é da página ou citado no HTML
+  const pageOrigin = (() => { try { return new URL(pageUrl).origin; } catch { return ''; } })();
+  const referenced = decodeHtmlEntities(doc.documentElement ? doc.documentElement.outerHTML : '');
   const mapObj: Record<string, string> = {};
   for (const [origUrl, targetZip] of urlToZipMap.entries()) {
-    if (origUrl.startsWith('data:') || origUrl.startsWith('blob:')) continue;
+    if (origUrl.startsWith('data:') || origUrl.startsWith('blob:') || isBrowserExtensionUrl(origUrl)) continue;
+    const decoded = decodeHtmlEntities(origUrl);
+    const cleaned = cleanUrlTokens(decoded, pageUrl || undefined);
+    let sameOrigin = false;
+    try { sameOrigin = new URL(cleaned, pageUrl || undefined).origin === pageOrigin; } catch {}
+    if (!sameOrigin && !referenced.includes(cleaned) && !referenced.includes(decoded)) continue;
     const rel = getRelativePath(currentZipPath, targetZip);
-    mapObj[origUrl] = rel;
-    const clean = origUrl.split('?')[0];
-    if (clean !== origUrl && !mapObj[clean]) {
+    mapObj[cleaned] = rel;
+    const clean = cleaned.split('?')[0];
+    if (clean !== cleaned && !mapObj[clean]) {
       mapObj[clean] = rel;
     }
   }
@@ -461,7 +475,7 @@ export function rewriteHtmlDocument(
   sanitizeSensitiveFields(doc);
   cleanAllElementUrlTokens(doc, pageUrl);
   injectFaithfulCsp(doc);
-  injectFetchInterceptor(doc, currentZipPath, urlToZipMap);
+  injectFetchInterceptor(doc, currentZipPath, urlToZipMap, pageUrl);
 
   // [FIEL-08] Remove tags de pré-resolução DNS que vazam consultas externas
   const dnsLinks = doc.querySelectorAll('link[rel="dns-prefetch"], link[rel="preconnect"]');
@@ -506,7 +520,7 @@ export function rewriteHtmlDocument(
       }
 
       if (targetZip) {
-        const rel = targetZip.startsWith('_next/') ? '/' + targetZip : getRelativePath(currentZipPath, targetZip);
+        const rel = getRelativePath(currentZipPath, targetZip);
         el.setAttribute('href', rel);
       } else if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('//')) {
         const rel = (el.getAttribute('rel') || '').toLowerCase();
@@ -582,7 +596,7 @@ export function rewriteHtmlDocument(
       }
 
       if (targetZip) {
-        const rel = targetZip.startsWith('_next/') ? '/' + targetZip : getRelativePath(currentZipPath, targetZip);
+        const rel = getRelativePath(currentZipPath, targetZip);
         el.setAttribute('src', rel);
       } else if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('//')) {
         el.setAttribute('type', 'application/blocked');

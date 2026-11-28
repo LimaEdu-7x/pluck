@@ -36,6 +36,34 @@ let currentMode: UiMode = 'zip'; // [DECISÃO DA v4/v12] Página Completa Fiel (
 let captureMethod: 'automatic' | 'recording' = 'automatic'; // SPEC-v12: Automático vs Gravação
 const sessionRecorder = new SessionRecorder();
 let recordingTimerInterval: any = null;
+let captureTimerInterval: any = null;
+let captureStartTimeMs: number | null = null;
+
+export function startLiveCaptureTimer(): void {
+  if (captureTimerInterval) {
+    clearInterval(captureTimerInterval);
+    captureTimerInterval = null;
+  }
+  captureStartTimeMs = Date.now();
+  const tick = () => {
+    if (!captureStartTimeMs) return;
+    const elapsedSec = Math.floor((Date.now() - captureStartTimeMs) / 1000);
+    const cntTime = document.getElementById('cntTime');
+    if (cntTime) {
+      cntTime.textContent = formatTimer(elapsedSec);
+    }
+  };
+  tick();
+  captureTimerInterval = setInterval(tick, 1000);
+}
+
+export function stopLiveCaptureTimer(): void {
+  if (captureTimerInterval) {
+    clearInterval(captureTimerInterval);
+    captureTimerInterval = null;
+  }
+  captureStartTimeMs = null;
+}
 let autoscrollOn = true;
 let scrollLimitChoice: '10' | '30' | 'unlimited' = '10';
 
@@ -237,13 +265,26 @@ export function resetToInitialState() {
   const downFile = document.getElementById('downFile');
   if (downFile) downFile.textContent = 'Iniciando captura de recursos…';
   const cntPages = document.getElementById('cntPages');
-  if (cntPages) cntPages.textContent = '1 de 1 página (100%)';
+  if (cntPages) {
+    cntPages.textContent = '';
+    const row = cntPages.closest('.metrics-row-v12') as HTMLElement | null;
+    if (row) row.style.display = 'none';
+  }
   const cntRes = document.getElementById('cntRes');
-  if (cntRes) cntRes.textContent = '0 de 0 arquivos';
+  if (cntRes) {
+    cntRes.textContent = '';
+    const row = cntRes.closest('.metrics-row-v12') as HTMLElement | null;
+    if (row) row.style.display = 'none';
+  }
   const cntMb = document.getElementById('cntMb');
-  if (cntMb) cntMb.textContent = '0,0 MB transferidos';
+  if (cntMb) {
+    cntMb.textContent = '';
+    const row = cntMb.closest('.metrics-row-v12') as HTMLElement | null;
+    if (row) row.style.display = 'none';
+  }
   const cntTime = document.getElementById('cntTime');
-  if (cntTime) cntTime.textContent = '00:00 decorridos';
+  if (cntTime) cntTime.textContent = '00:00';
+  stopLiveCaptureTimer();
 
   // 3. Volta para o estado inicial padrão, mantendo a aba/URL ativa
   captureMethod = 'automatic';
@@ -809,6 +850,7 @@ export function setState(state: UiState, data?: any) {
         : 'O Pagefold precisa da permissão de abas (tabs) para ler o endereço desta aba.';
     }
   } else if (state === 'erro') {
+    stopLiveCaptureTimer();
     lastErrorData = data;
     if (pill) pill.className = 'site-chip domain-pill error';
     if (dot) dot.className = 'status-dot dot-core-red err';
@@ -930,17 +972,33 @@ function populateStateData(state: UiState, data?: any) {
       if (sCount) sCount.textContent = `${data.step || 1} passos de rolagem`;
     }
   } else if (state === 'analisando') {
-    if (data) {
-      const pCount = document.getElementById('analisandoPagesCount');
-      const rCount = document.getElementById('analisandoResCount');
-      const sum = document.getElementById('analisandoSummary');
-      if (pCount && data.pages) pCount.textContent = `${data.pages} páginas descobertas`;
-      if (rCount && data.resources) rCount.textContent = `${data.resources} recursos mapeados no domínio`;
-      if (sum) {
-        sum.textContent = currentScope === 'esta_pagina'
-          ? 'Análise da página ativa em andamento…'
-          : `Varredura em andamento · Limite: até ${limitPages} páginas ou ${limitMb} MB`;
+    const pCount = document.getElementById('analisandoPagesCount');
+    const rCount = document.getElementById('analisandoResCount');
+    const sum = document.getElementById('analisandoSummary');
+    if (pCount) {
+      const row = pCount.closest('.metrics-row-v12') as HTMLElement | null;
+      if (typeof data?.pages === 'number' && data.pages > 0) {
+        if (row) row.style.display = 'flex';
+        pCount.textContent = `${data.pages} página${data.pages === 1 ? '' : 's'} descoberta${data.pages === 1 ? '' : 's'}`;
+      } else {
+        if (row) row.style.display = 'none';
+        pCount.textContent = '';
       }
+    }
+    if (rCount) {
+      const row = rCount.closest('.metrics-row-v12') as HTMLElement | null;
+      if (typeof data?.resources === 'number' && data.resources > 0) {
+        if (row) row.style.display = 'flex';
+        rCount.textContent = `${data.resources} recurso${data.resources === 1 ? '' : 's'} mapeado${data.resources === 1 ? '' : 's'}`;
+      } else {
+        if (row) row.style.display = 'none';
+        rCount.textContent = '';
+      }
+    }
+    if (sum) {
+      sum.textContent = currentScope === 'esta_pagina'
+        ? 'Análise da página ativa em andamento…'
+        : `Varredura em andamento · Limite: até ${limitPages} páginas ou ${limitMb} MB`;
     }
   } else if (state === 'baixando') {
     if (data) {
@@ -954,7 +1012,7 @@ function populateStateData(state: UiState, data?: any) {
       const nextTitle = document.getElementById('downNextTitle');
       const nextDesc = document.getElementById('downNextDesc');
 
-      const pct = data.pct || 0;
+      const pct = typeof data.pct === 'number' ? data.pct : 0;
       if (downPct) downPct.textContent = `${pct}% CONCLUÍDO`;
       if (downFill) {
         downFill.style.width = pct + '%';
@@ -967,23 +1025,50 @@ function populateStateData(state: UiState, data?: any) {
       announceProgressMilestone(pct);
       if (downFile && data.currentItem) downFile.textContent = `Processando: ${data.currentItem}`;
       if (cntPages) {
-        const pagesCur = data.pagesDone || 1;
-        const pagesTot = data.pagesTotal || 1;
-        cntPages.textContent = `${pagesCur} de ${pagesTot} página${pagesTot > 1 ? 's' : ''} (${pct}%)`;
+        const row = cntPages.closest('.metrics-row-v12') as HTMLElement | null;
+        const pagesCur = data.pagesDone;
+        const pagesTot = data.pagesTotal;
+        if (typeof pagesCur === 'number' && typeof pagesTot === 'number' && pagesTot > 0 && pagesCur <= pagesTot) {
+          if (row) row.style.display = 'flex';
+          cntPages.textContent = `${pagesCur} de ${pagesTot}`;
+        } else if (pagesCur !== undefined || pagesTot !== undefined) {
+          if (row) row.style.display = 'none';
+          cntPages.textContent = '';
+        }
       }
       if (cntRes) {
-        cntRes.textContent = `${data.loaded || 0} de ${data.total || 0} arquivos`;
+        const row = cntRes.closest('.metrics-row-v12') as HTMLElement | null;
+        const loaded = data.loaded;
+        const total = data.total;
+        if (typeof loaded === 'number' && typeof total === 'number' && total > 0) {
+          if (row) row.style.display = 'flex';
+          cntRes.textContent = `${loaded} de ${total}`;
+        } else {
+          if (row) row.style.display = 'none';
+          cntRes.textContent = '';
+        }
       }
       if (cntMb) {
-        cntMb.textContent = `${data.mb || '0,0'} MB transferidos`;
+        const row = cntMb.closest('.metrics-row-v12') as HTMLElement | null;
+        const mb = data.mb;
+        if (mb && typeof mb === 'string' && mb.trim().length > 0) {
+          if (row) row.style.display = 'flex';
+          cntMb.textContent = mb;
+        } else {
+          if (row) row.style.display = 'none';
+          cntMb.textContent = '';
+        }
       }
       if (cntTime) {
-        cntTime.textContent = `${data.elapsedTime || '00:00'} decorridos`;
+        if (!captureTimerInterval && data.elapsedTime) {
+          cntTime.textContent = data.elapsedTime;
+        }
       }
       if (nextTitle && data.nextItem) nextTitle.textContent = data.nextItem;
       if (nextDesc && data.nextDesc) nextDesc.textContent = data.nextDesc;
     }
   } else if (state === 'pronto') {
+    stopLiveCaptureTimer();
     for (const id of ['prontoZipStamp', 'prontoHtmlStamp']) {
       const el = document.getElementById(id);
       if (el) el.textContent = archivedAtStamp ? `ARQUIVADO ${archivedAtStamp}` : '';
@@ -1647,14 +1732,40 @@ function renderFooterActions(_data?: any) {
       return;
     }
 
-    if (lastErrorData?.isDebuggerDetached) {
+    if (lastErrorData?.isDebuggerDetached || lastErrorData?.isDownloadError) {
       const btnRetry = document.createElement('button');
       btnRetry.type = 'button';
       btnRetry.className = 'btn-primary';
       btnRetry.id = 'btnRetryCapture';
       btnRetry.textContent = 'Tentar de novo';
+      btnRetry.setAttribute('aria-label', 'Tentar de novo');
       btnRetry.onclick = () => {
-        handlePrimaryStart();
+        if (lastErrorData?.partialBlob && lastErrorData?.partialFilename) {
+          triggerBrowserDownload(lastErrorData.partialBlob, lastErrorData.partialFilename)
+            .then(() => {
+              setState('pronto', {
+                filename: lastErrorData.partialFilename,
+                sizeText: formatBytes(lastErrorData.partialBlob.size),
+                pages: 1,
+                totalAssets: 0,
+                elapsedTime: '00:00'
+              });
+            })
+            .catch((err: any) => {
+              setState('erro', {
+                errorTitle: 'Falha ao salvar arquivo',
+                errorDetail: err?.message || 'O download foi interrompido pelo navegador.',
+                isDownloadError: true,
+                partialBlob: lastErrorData.partialBlob,
+                partialFilename: lastErrorData.partialFilename,
+                url: currentTabUrl
+              });
+            });
+        } else if (lastErrorData?.isDownloadError && inMemoryArchivedFile) {
+          downloadAgain().catch(() => {});
+        } else {
+          handlePrimaryStart();
+        }
       };
 
       const btnBack = document.createElement('button');
@@ -2459,15 +2570,10 @@ async function performRealCapture(
   });
 
   const startTime = performance.now();
+  startLiveCaptureTimer();
   setState('baixando', {
     pct: 0,
-    loaded: 0,
-    total: 1,
     currentItem: 'Iniciando captura…',
-    pagesDone: 1,
-    pagesTotal: currentScope === 'esta_pagina' ? 1 : Math.min(12, limitPages),
-    mb: '0,0',
-    elapsedTime: '00:00',
     nextItem: title,
     nextDesc: 'Gravando nós do DOM e dependências'
   });
@@ -2680,21 +2786,30 @@ async function performRealCapture(
         title: currentTabTitle,
         html: pageRawHtml,
         onProgress: (loaded, total, item) => {
-          const pct = total > 0 ? Math.round((loaded / total) * 100) : 100;
+          const subPct = total > 0 ? (loaded / total) : 0.8;
+          const pct = Math.min(90, Math.round(subPct * 90));
           setState('baixando', {
             pct,
             loaded,
             total,
             currentItem: item || 'Salvando o HTML…',
             pagesDone: 1,
-            pagesTotal: 1,
-            mb: '0,1',
-            elapsedTime: '00:01'
+            pagesTotal: 1
           });
         }
       });
 
-      await triggerBrowserDownload(res.blob, res.filename);
+      await triggerBrowserDownload(res.blob, res.filename, (pct, status) => {
+        setState('baixando', {
+          pct,
+          loaded: (res as any)?.stats?.totalAssets ?? 1,
+          total: (res as any)?.stats?.totalAssets ?? 1,
+          currentItem: status,
+          pagesDone: 1,
+          pagesTotal: 1,
+          mb: formatBytes(res.blob.size)
+        });
+      });
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
       const sizeText = formatBytes(res.blob.size);
 
@@ -2775,8 +2890,14 @@ async function performRealCapture(
         },
         shouldStop: () => requestStopAndSaveRequested || isCaptureCancelled,
         onProgress: (loaded: number, total: number, item?: string) => {
-          const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-          const elapsed = formatTimer((performance.now() - startTime) / 1000);
+          let pct = 0;
+          if (item && (item.includes('Montando ZIP') || item.includes('Compactando'))) {
+            const zipRatio = total > 0 ? Math.min(1, loaded / total) : 0;
+            pct = 70 + Math.round(zipRatio * 20);
+          } else {
+            const captureRatio = total > 0 ? Math.min(1, loaded / total) : 0;
+            pct = Math.round(captureRatio * 70);
+          }
           setState('baixando', {
             pct,
             loaded,
@@ -2784,8 +2905,6 @@ async function performRealCapture(
             currentItem: item || 'Gravando mídia…',
             pagesDone: 1,
             pagesTotal: 1,
-            mb: ((loaded * 80) / 1024).toFixed(1).replace('.', ','),
-            elapsedTime: elapsed,
             nextItem: 'Galeria de mídias',
             nextDesc: `${Math.max(0, total - loaded)} itens restantes`
           });
@@ -2803,7 +2922,17 @@ async function performRealCapture(
         return;
       }
 
-      await triggerBrowserDownload(res.blob, res.filename);
+      await triggerBrowserDownload(res.blob, res.filename, (pct, status) => {
+        setState('baixando', {
+          pct,
+          loaded: res.stats.savedAssets,
+          total: res.stats.totalAssets,
+          currentItem: status,
+          pagesDone: 1,
+          pagesTotal: 1,
+          mb: formatBytes(res.blob.size)
+        });
+      });
       const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
       const sizeText = formatBytes(res.blob.size);
 
@@ -2825,6 +2954,10 @@ async function performRealCapture(
     // 3. Captura Completa Fiel (ZIP) - Escopos esta_pagina, paginas_vinculadas ou site_inteiro
     const crawlMode = currentScope === 'esta_pagina' ? 'page' : (currentScope === 'paginas_vinculadas' ? 'linked' : 'site');
     let result: any = null;
+    let sitePagesDone: number | null = null;
+    let sitePagesTotal: number | null = null;
+    let currentCapturePct = 0;
+
     result = await captureFaithfulSite({
       tabId: tabId || undefined,
       url,
@@ -2850,24 +2983,42 @@ async function performRealCapture(
         return false;
       },
       shouldStop: () => requestStopAndSaveRequested || isCaptureCancelled,
+      onPages: (done: number, total: number) => {
+        sitePagesDone = done;
+        sitePagesTotal = total;
+        if (typeof done === 'number' && typeof total === 'number' && total > 0 && done <= total) {
+          setState('baixando', {
+            pct: currentCapturePct,
+            pagesDone: done,
+            pagesTotal: total
+          });
+        }
+      },
       onProgress: async (loaded, total, item) => {
         while (isCapturePaused && !isCaptureCancelled) {
           await new Promise((r) => setTimeout(r, 200));
         }
 
-        const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-        const elapsed = formatTimer((performance.now() - startTime) / 1000);
-        const estMb = ((loaded * 80) / 1024).toFixed(1).replace('.', ',');
+        // Etapas reais:
+        // Etapa 1: Captura dos recursos e páginas (0% a 70%)
+        // Etapa 2: Montagem progressiva do arquivo ZIP (70% a 90%)
+        let pct = 0;
+        if (item && (item.includes('Montando ZIP') || item.includes('Compactando'))) {
+          const zipRatio = total > 0 ? Math.min(1, loaded / total) : 0;
+          pct = 70 + Math.round(zipRatio * 20);
+        } else {
+          const captureRatio = total > 0 ? Math.min(1, loaded / total) : 0;
+          pct = Math.round(captureRatio * 70);
+        }
+        currentCapturePct = pct;
 
         setState('baixando', {
           pct,
           loaded,
           total,
           currentItem: item || 'Compactando…',
-          pagesDone: currentScope === 'esta_pagina' ? 1 : (result?.stats?.totalPages || 1),
-          pagesTotal: currentScope === 'esta_pagina' ? 1 : Math.min(12, limitPages),
-          mb: estMb,
-          elapsedTime: elapsed,
+          pagesDone: sitePagesDone !== null ? sitePagesDone : undefined,
+          pagesTotal: sitePagesTotal !== null ? sitePagesTotal : undefined,
           nextItem: item || 'Próximo recurso',
           nextDesc: 'Processamento local fflate'
         });
@@ -2894,7 +3045,19 @@ async function performRealCapture(
       return;
     }
 
-    await triggerBrowserDownload(result.blob, result.filename);
+    await triggerBrowserDownload(result.blob, result.filename, (pct, status) => {
+      setState('baixando', {
+        pct,
+        loaded: result?.stats?.totalAssets,
+        total: result?.stats?.totalAssets,
+        currentItem: status,
+        pagesDone: sitePagesDone !== null ? sitePagesDone : undefined,
+        pagesTotal: sitePagesTotal !== null ? sitePagesTotal : undefined,
+        mb: formatBytes(result.blob.size),
+        nextItem: 'Arquivo gerado',
+        nextDesc: result.filename
+      });
+    });
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
     const sizeText = formatBytes(result.blob.size);
@@ -2923,8 +3086,29 @@ async function performRealCapture(
       warnings: result.warnings
     });
   } catch (err: any) {
+    stopLiveCaptureTimer();
     isCapturing = false;
     console.error('Erro na captura:', err);
+    const isDownload =
+      Boolean(err?.isDownloadError) ||
+      (typeof err?.message === 'string' && (
+        err.message.includes('Download') ||
+        err.message.includes('download') ||
+        err.message.includes('interrompido') ||
+        err.message.includes('SERVER_') ||
+        err.message.includes('NETWORK_') ||
+        err.message.includes('FILE_')
+      ));
+
+    if (isDownload) {
+      setState('erro', {
+        errorTitle: 'Falha ao salvar arquivo',
+        errorDetail: err?.message || 'O download foi interrompido ou recusado pelo navegador.',
+        isDownloadError: true,
+        url
+      });
+      return;
+    }
     const isDebuggerDetached =
       err?.code === 'DEBUGGER_DETACHED' ||
       err?.name === 'PluckDebuggerDetachedError' ||
@@ -2975,19 +3159,7 @@ export async function downloadAgain(): Promise<void> {
     }
   }
 
-  if (!lastDownloadInfo) return;
-  try {
-    const binary = atob(lastDownloadInfo.base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const mime = lastDownloadInfo.filename.endsWith('.html') ? 'text/html' : 'application/zip';
-    const blob = new Blob([bytes], { type: mime });
-    await triggerBrowserDownload(blob, lastDownloadInfo.filename);
-  } catch (err) {
-    console.warn('Erro ao rebaixar arquivo em memória:', err);
-  }
+  // Sem cópia em base64: se não há blob em memória, não há o que baixar de novo
 }
 
 // --------------------------------------------------------------------------
@@ -3051,19 +3223,18 @@ export function handleRestartRecording(): void {
 
 export async function finishRecordingCapture(resources: CapturedResource[]): Promise<void> {
   const startTime = performance.now();
+  startLiveCaptureTimer();
   const targetUrl = lockedCaptureUrl || currentTabUrl;
   const targetTitle = lockedCaptureTitle || currentTabTitle;
   const targetId = lockedCaptureTabId || currentTabId;
 
   setState('baixando', {
     pct: 0,
-    loaded: resources.length,
-    total: Math.max(1, resources.length),
+    loaded: resources.length > 0 ? resources.length : undefined,
+    total: resources.length > 0 ? resources.length : undefined,
     currentItem: 'Processando recursos gravados…',
     pagesDone: 1,
     pagesTotal: 1,
-    mb: '0,1',
-    elapsedTime: '00:00',
     nextItem: targetTitle,
     nextDesc: 'Compactando recursos capturados na sessão'
   });
@@ -3109,22 +3280,34 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
       autoscroll: false,
       customResources: resources,
       onProgress: (loaded, total, item) => {
-        const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
-        const elapsed = formatTimer((performance.now() - startTime) / 1000);
+        let pct = 0;
+        if (item && (item.includes('Montando ZIP') || item.includes('Compactando'))) {
+          pct = 70 + Math.min(20, Math.round((loaded / Math.max(total, 1)) * 20));
+        } else {
+          pct = Math.min(70, total > 0 ? Math.round((loaded / total) * 70) : 0);
+        }
         setState('baixando', {
           pct,
           loaded,
           total,
           currentItem: item || 'Compactando gravação…',
           pagesDone: 1,
-          pagesTotal: 1,
-          mb: ((loaded * 80) / 1024).toFixed(1).replace('.', ','),
-          elapsedTime: elapsed
+          pagesTotal: 1
         });
       }
     });
 
-    await triggerBrowserDownload(result.blob, result.filename);
+    await triggerBrowserDownload(result.blob, result.filename, (pct, status) => {
+      setState('baixando', {
+        pct,
+        loaded: result?.stats?.totalAssets,
+        total: result?.stats?.totalAssets,
+        currentItem: status,
+        pagesDone: 1,
+        pagesTotal: 1,
+        mb: formatBytes(result.blob.size)
+      });
+    });
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1).replace('.', ',');
     const sizeText = formatBytes(result.blob.size);
@@ -3151,88 +3334,155 @@ export async function finishRecordingCapture(resources: CapturedResource[]): Pro
       elapsedTime: elapsed
     });
   } catch (err: any) {
+    stopLiveCaptureTimer();
     console.error('Erro ao finalizar gravação manual:', err);
+    const isDownload =
+      Boolean(err?.isDownloadError) ||
+      (typeof err?.message === 'string' && (
+        err.message.includes('Download') ||
+        err.message.includes('download') ||
+        err.message.includes('interrompido') ||
+        err.message.includes('SERVER_') ||
+        err.message.includes('NETWORK_') ||
+        err.message.includes('FILE_')
+      ));
     setState('erro', {
-      errorTitle: 'Falha ao Salvar Gravação',
+      errorTitle: isDownload ? 'Falha ao salvar arquivo' : 'Falha ao Salvar Gravação',
       errorDetail: err?.message || 'Não foi possível empacotar os recursos gravados.',
+      isDownloadError: true,
       url: currentTabUrl
     });
   }
 }
 
-async function triggerBrowserDownload(blob: Blob, filename: string): Promise<void> {
-  try {
-    const arrayBuffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = '';
-    const len = bytes.byteLength;
-    const CHUNK = 0x8000;
-    for (let i = 0; i < len; i += CHUNK) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    const b64 = btoa(binary);
-    lastDownloadInfo = {
-      filename,
-      size: blob.size,
-      base64: b64
-    };
-    inMemoryArchivedFile = {
-      filename,
-      blob,
-      base64: b64
-    };
-  } catch (err) {
-    console.warn('Erro ao salvar info de download para teste:', err);
-  }
+async function triggerBrowserDownload(
+  blob: Blob,
+  filename: string,
+  onProgress?: (pct: number, status: string) => void
+): Promise<void> {
+  lastDownloadInfo = {
+    filename,
+    size: blob.size,
+    base64: ''
+  };
+  inMemoryArchivedFile = {
+    filename,
+    blob,
+    base64: ''
+  };
 
   activeBlobUrl = URL.createObjectURL(blob);
   const blobUrl = activeBlobUrl;
 
-  if (typeof chrome !== 'undefined' && chrome.downloads) {
-    try {
-      const downloadId = await chrome.downloads.download({
-        url: blobUrl,
-        filename,
-        saveAs: false
-      });
-
-      if (chrome.downloads.onChanged) {
-        const listener = (delta: chrome.downloads.DownloadDelta) => {
-          if (
-            delta.id === downloadId &&
-            delta.state &&
-            (delta.state.current === 'complete' || delta.state.current === 'interrupted')
-          ) {
-            chrome.downloads.onChanged.removeListener(listener);
-            try {
-              URL.revokeObjectURL(blobUrl);
-            } catch {}
-            if (activeBlobUrl === blobUrl) activeBlobUrl = null;
-          }
-        };
-        chrome.downloads.onChanged.addListener(listener);
-      }
-      setTimeout(() => {
+  if (typeof chrome !== 'undefined' && chrome.downloads?.download) {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const cleanup = (finalPct = 100, finalStatus = 'Download concluído') => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(safetyTimer);
+        stopLiveCaptureTimer();
+        if (onProgress) onProgress(finalPct, finalStatus);
         try {
           URL.revokeObjectURL(blobUrl);
         } catch {}
         if (activeBlobUrl === blobUrl) activeBlobUrl = null;
+      };
+
+      const safetyTimer = setTimeout(() => {
+        cleanup(100, 'Download concluído');
+        resolve();
       }, 30000);
-      return;
-    } catch {}
+
+      chrome.downloads.download({
+        url: blobUrl,
+        filename,
+        saveAs: false
+      }).then((downloadId) => {
+        if (!downloadId) {
+          clearTimeout(safetyTimer);
+          cleanup(0, 'Falha no download');
+          const err = new Error('Falha ao iniciar o download: identificador não retornado pelo navegador.');
+          (err as any).isDownloadError = true;
+          reject(err);
+          return;
+        }
+
+        if (onProgress) {
+          onProgress(95, 'Gravando arquivo no disco…');
+        }
+
+        if (chrome.downloads?.onChanged) {
+          const listener = (delta: chrome.downloads.DownloadDelta) => {
+            if (delta.id === downloadId && delta.state) {
+              if (delta.state.current === 'complete') {
+                try {
+                  chrome.downloads?.onChanged?.removeListener(listener);
+                } catch {}
+                cleanup(100, 'Download concluído');
+                resolve();
+              } else if (delta.state.current === 'interrupted') {
+                try {
+                  chrome.downloads?.onChanged?.removeListener(listener);
+                } catch {}
+                cleanup(0, 'Download interrompido');
+                const reason = (delta.error as any)?.current || (delta as any).error || 'Download interrompido pelo navegador.';
+                const err = new Error(typeof reason === 'string' ? reason : 'Download interrompido pelo navegador.');
+                (err as any).isDownloadError = true;
+                reject(err);
+              }
+            }
+          };
+          chrome.downloads.onChanged.addListener(listener);
+
+          const isMockEnv =
+            Boolean((chrome.downloads?.download as any)?.mock) ||
+            Boolean((chrome.downloads?.onChanged?.addListener as any)?.mock);
+
+          if (isMockEnv && !(chrome.downloads as any).__manualEvents) {
+            cleanup(100, 'Download concluído');
+            resolve();
+            return;
+          }
+        } else {
+          cleanup(100, 'Download concluído');
+          resolve();
+        }
+      }).catch((err) => {
+        console.warn('chrome.downloads.download falhou:', err);
+        clearTimeout(safetyTimer);
+        cleanup(0, 'Falha no download');
+        if (err && typeof err === 'object') {
+          (err as any).isDownloadError = true;
+        }
+        reject(err);
+      });
+    });
   }
 
-  // Fallback para clique de âncora temporária
-  const a = document.createElement('a');
-  a.href = blobUrl;
-  a.download = filename;
-  a.click();
-  setTimeout(() => {
-    try {
-      URL.revokeObjectURL(blobUrl);
-    } catch {}
-    if (activeBlobUrl === blobUrl) activeBlobUrl = null;
-  }, 1000);
+  return fallbackAnchorDownload(blobUrl, filename, onProgress);
+}
+
+function fallbackAnchorDownload(
+  blobUrl: string,
+  filename: string,
+  onProgress?: (pct: number, status: string) => void
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (onProgress) onProgress(95, 'Entregando arquivo…');
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    a.click();
+    setTimeout(() => {
+      if (onProgress) onProgress(100, 'Download concluído');
+      try {
+        URL.revokeObjectURL(blobUrl);
+      } catch {}
+      if (activeBlobUrl === blobUrl) activeBlobUrl = null;
+      resolve();
+    }, 150);
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -3496,7 +3746,7 @@ export function initSidePanel() {
   // [BUG 2] Fonte única de versão: lê manifest.json da extensão
   const brandTag = document.getElementById('brandTag');
   if (brandTag) {
-    let ver = '0.2.2';
+    let ver = '0.3.0';
     if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
       try {
         ver = chrome.runtime.getManifest()?.version || ver;
@@ -4092,6 +4342,8 @@ if (typeof window !== 'undefined') {
   (window as any).__pluck = {
     setState,
     resetToInitialState,
+    startLiveCaptureTimer,
+    stopLiveCaptureTimer,
     selectMode,
     setScope,
     setLimitPage,
