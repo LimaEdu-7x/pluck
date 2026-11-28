@@ -4,7 +4,7 @@ export function generateReadmeText(siteTitle: string, siteUrl: string): string {
   return `========================================================================
 CLONE FIEL OFFLINE — ${siteTitle.toUpperCase()}
 Origem: ${siteUrl}
-Gerado com: Pluck v0.7.0 (Extrator Web 100% Local)
+Gerado com: Pluck v0.7.1 (Extrator Web 100% Local)
 ========================================================================
 
 COMO VISUALIZAR ESTE CLONE COM FIDELIDADE TOTAL:
@@ -256,6 +256,15 @@ try {
         continue
       }
 
+      # 0b. Caminhos /api/* nunca viram HTML: a copia nao tem o servidor, entao responde 404 JSON
+      if ($rawPath.StartsWith('api/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $res.ContentType = 'application/json; charset=utf-8'
+        $res.StatusCode = 404
+        $apiMsg = [System.Text.Encoding]::UTF8.GetBytes('{"error":"offline","message":"Copia offline: API indisponivel"}')
+        $res.OutputStream.Write($apiMsg, 0, $apiMsg.Length)
+        continue
+      }
+
       $resolvedFile = $null
 
       # 1. Arquivo direto
@@ -278,6 +287,11 @@ try {
       elseif ($targetPath.Contains('\\\\next\\\\') -or $targetPath.Contains('/next/')) {
         $alt = $targetPath.Replace('\\\\next\\\\', '\\\\_next\\\\').Replace('/next/', '/_next/')
         if ([System.IO.File]::Exists($alt)) { $resolvedFile = $alt }
+      }
+
+      # 5. Rota /login: o app e SPA, entao serve o index (tela de login do proprio app), nao o fallback
+      if (-not $resolvedFile -and $rawPath.TrimEnd('/') -eq 'login') {
+        $resolvedFile = [System.IO.Path]::Combine($baseDir, 'index.html')
       }
 
       if ($resolvedFile) {
@@ -324,10 +338,11 @@ export function generateAbrirSh(): string {
 echo "Iniciando servidor local do Pluck vinculado a 127.0.0.1..."
 PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1]); s.close()" 2>/dev/null || echo 8080)
 if command -v python3 >/dev/null 2>&1; then
-    python3 -c "import http.server, socketserver, os, sys
+    python3 -c "import http.server, socketserver, os, sys, json
 port = int(sys.argv[1])
 class Handler(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
+        if path.split('?')[0].rstrip('/') == '/login': return os.path.join(os.getcwd(), 'index.html')
         p = super().translate_path(path)
         if not os.path.exists(p):
             if os.path.exists(p + '.html'): return p + '.html'
@@ -337,6 +352,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if os.path.exists(fb) and (path.endswith('.html') or '.' not in os.path.basename(path)): return fb
         return p
     def do_GET(self):
+        if self.path.split('?')[0].startswith('/api/'):
+            body = json.dumps({'error': 'offline', 'message': 'Copia offline: API indisponivel'}).encode()
+            self.send_response(404)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if '_rsc=' in self.path or '__next._tree.txt' in self.path or self.headers.get('RSC') or self.headers.get('Next-Router-Prefetch'):
             self.send_response(200)
             self.send_header('Content-Type', 'text/x-component; charset=utf-8')

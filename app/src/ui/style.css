@@ -132,6 +132,14 @@ input[type="checkbox"]:focus-visible {
   z-index: 10;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -173,9 +181,9 @@ input[type="checkbox"]:focus-visible {
   font-family: var(--font-body);
   font-size: 13px;
   color: var(--text-primary);
-  max-width: 55%;
+  max-width: 65%;
   min-width: 0;
-  flex-shrink: 1;
+  flex-shrink: 0;
   overflow: hidden;
 }
 
@@ -198,7 +206,7 @@ input[type="checkbox"]:focus-visible {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  color: var(--text-muted);
+  color: #FFFFFF;
   background: transparent;
   border: 1px solid transparent;
   transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
@@ -208,9 +216,9 @@ input[type="checkbox"]:focus-visible {
 
 .btn-github:hover,
 .btn-github:focus-visible {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
   outline: none;
 }
 
